@@ -18,15 +18,15 @@ class PSIMODTests(TestCase):
 
         grid = psi.Grid(type='hpring', n=32) 
 
-        psi.skymap(grid=grid, mesh=mesh, bstep=4)
+        psi.skymap(grid=grid, mesh=mesh, bstep=1)
 
         
         # show the pixel area plot
-        #err = grid.fields["m"]/grid.d-1.0
-        #cran = max(np.abs(np.min(err)), np.abs(np.max(err)))
-        #hp.mollview(err, title='Pix area error', cmap=plt.cm.RdYlGn,
-                #min=-cran, max=cran)
-        #plt.show()
+        err = grid.fields["m"]/grid.d-1.0
+        cran = max(np.abs(np.min(err)), np.abs(np.max(err)))
+        hp.mollview(err, title='Pix area error', cmap=plt.cm.RdYlGn,
+                min=-cran, max=cran)
+        plt.show()
 
     def test_voxels(self):
 
@@ -34,15 +34,15 @@ class PSIMODTests(TestCase):
         mesh = psi.Mesh(filename='data/snapshot_010', loader='gadget2')
         #print mesh.pos[mesh.connectivity][12475]
 
-        grid = psi.Grid(type='cart', n=(128,128,128), window=(mesh.boxmin, mesh.boxmax)) 
-        #grid = psi.Grid(type='cart', n=(128,128,128), window=((-1,-1,-1),(45,45,45))) 
+        grid = psi.Grid(type='cart', n=(56,56,56), window=(mesh.boxmin, mesh.boxmax)) 
+        #grid = psi.Grid(type='cart', n=(64,64,64), window=((-5,-5,-5),(45,45,45))) 
 
         psi.voxels(grid=grid, mesh=mesh)
 
         plt.imshow(np.log10(grid.fields["m"][:,:,32]))
         plt.show()
 
-        print "mass sum = ", np.sum(grid.fields["m"])
+        print "mass error = ", 1.0-np.sum(grid.fields["m"])
         
         # show the pixel area plot
         #err = grid.fields["m"]/grid.d-1.0

@@ -67,6 +67,7 @@ static void PSI_Mesh2mesh(Mesh* mesh, psi_mesh* cmesh) {
 	// TODO: mass...
 	cmesh->pos = PyArray_DATA((PyArrayObject*)mesh->pos);
 	cmesh->vel = PyArray_DATA((PyArrayObject*)mesh->vel);
+	cmesh->mass = PyArray_DATA((PyArrayObject*)mesh->mass);
 	cmesh->connectivity = PyArray_DATA((PyArrayObject*)mesh->connectivity);
 
 }
@@ -152,6 +153,7 @@ static int Mesh_init(Mesh *self, PyObject *args, PyObject *kwds) {
 		npdims[1] = cmesh.dim;
 		self->pos = PyArray_SimpleNew(2, npdims, NPY_DOUBLE);
 		self->vel = PyArray_SimpleNew(2, npdims, NPY_DOUBLE);
+		self->mass = PyArray_SimpleNew(1, npdims, NPY_DOUBLE);
 		npdims[0] = cmesh.nelem;
 		npdims[1] = psi_verts_per_elem(cmesh.elemtype); 
 		self->connectivity = PyArray_SimpleNew(2, npdims, NPY_INT32);
@@ -170,6 +172,7 @@ static int Mesh_init(Mesh *self, PyObject *args, PyObject *kwds) {
 
 		cmesh.pos = PyArray_DATA((PyArrayObject*)self->pos);
 		cmesh.vel = PyArray_DATA((PyArrayObject*)self->vel);
+		cmesh.mass = PyArray_DATA((PyArrayObject*)self->mass);
 		cmesh.connectivity = PyArray_DATA((PyArrayObject*)self->connectivity);
 
 		// load the data into the numpy buffers
@@ -528,6 +531,7 @@ static PyTypeObject GridType = {
 static PyObject *PSI_skymap(PyObject *self, PyObject *args, PyObject* kwds) {
 
 	psi_grid cgrid;
+	psi_mesh cmesh;
 	psi_int bstep;
 	Mesh* mesh;
 	Grid* grid;	
@@ -547,12 +551,15 @@ static PyObject *PSI_skymap(PyObject *self, PyObject *args, PyObject* kwds) {
 	//for(p = 0; p < )
 	
 	PSI_Grid2grid(grid, &cgrid);
+	PSI_Mesh2mesh(mesh, &cmesh);
 	if(cgrid.type != PSI_GRID_HPRING || cgrid.dim != 3) 
+		Py_RETURN_NONE;
+	if(cmesh.dim != cgrid.dim)
 		Py_RETURN_NONE;
 
 	printf("----Making hpring skymap-----\n");
 
-	psi_skymap(&cgrid, bstep);
+	psi_skymap(&cgrid, &cmesh, bstep);
 
    /* Do your stuff here. */
    Py_RETURN_NONE;

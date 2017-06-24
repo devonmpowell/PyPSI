@@ -130,6 +130,7 @@ int load_gadget2(psi_mesh* mesh, const char* filename) {
 		mesh->vel[tid[p]].x = tvel[3*p+0];
 		mesh->vel[tid[p]].y = tvel[3*p+1];
 		mesh->vel[tid[p]].z = tvel[3*p+2];
+		mesh->mass[tid[p]] = 1.0/mesh->npart;
 	}
 
 	psi_free(tpos);

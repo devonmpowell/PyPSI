@@ -3,6 +3,8 @@
 
 #include "psi.h" 
 #include "grid.h" 
+#include "mesh.h" 
+#include "rtree.h" 
 
 //#define PI_OVER_THREE 1.0471975512
 //#define PI 3.14159265359 
@@ -13,7 +15,7 @@
 //#define TO_RADIANS 0.01745329251
 //#define NPOINT_SIGMA 2048 
 
-void psi_skymap(psi_grid* grid, psi_int bstep);
+void psi_skymap(psi_grid* grid, psi_mesh* mesh, psi_int bstep);
 
 
 // stores a beam: 3 vertices with corresponding 4-positions

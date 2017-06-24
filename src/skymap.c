@@ -3,13 +3,34 @@
 
 // the main function
 // traces beams as defined by the grb_params passed in
-void psi_skymap(psi_grid* grid, psi_int bstep) {
+void psi_skymap(psi_grid* grid, psi_mesh* mesh, psi_int bstep) {
 
-	psi_int p, b, ax; 
+	psi_int p, b, ax, e, v; 
 	psi_dvec grind;
 	psi_real vol;
 	psi_rvec corners[64], center;
+	psi_int vpere = mesh->elemtype;
+	psi_rvec tpos[vpere], trbox[2];
 	psi_beam beam;
+
+	psi_rvec rawverts[3]; 
+	psi_rvec beamverts[6];
+
+
+	// First, build an rtree to get logN spatial queries
+	psi_rtree rtree;
+	psi_rtree_query qry;	
+	psi_rtree_init(&rtree, 2*mesh->nelem);
+	for(e = 0; e < mesh->nelem; ++e) {
+		// make it periodic, get its bounding box, and check it against the grid
+		for(v = 0; v < vpere; ++v)
+			tpos[v] = mesh->pos[mesh->connectivity[e*vpere+v]];
+		// TODO: mesh->box may not exist for nonperiodic meshes!!!
+		if(!psi_aabb_periodic(tpos, trbox, mesh->box, mesh)) continue;
+		// insert each element into the tree
+		psi_rtree_insert(&rtree, trbox, e);
+	}
+	//psi_rtree_print(stdout, &rtree);
 
 	// for every pixel in the image...
 	memset(grid->fields[0], 0, grid->n.k*sizeof(psi_real));
@@ -27,9 +48,9 @@ void psi_skymap(psi_grid* grid, psi_int bstep) {
 	
 			// set spatial indices of beam four-vectors, starting at index 1
 			for(ax = 0; ax < 3; ++ax) {
-				beam.pos[0][ax+1] = corners[b].xyz[ax];
-				beam.pos[1][ax+1] = corners[(b+1)%(4*bstep)].xyz[ax];
-				beam.pos[2][ax+1] = center.xyz[ax]; 
+				rawverts[0].xyz[ax] = corners[b].xyz[ax];
+				rawverts[1].xyz[ax] = corners[(b+1)%(4*bstep)].xyz[ax];
+				rawverts[2].xyz[ax] = center.xyz[ax]; 
 			}
 	
 			// TODO: rotate/transform/boost the beam position to the source
@@ -37,12 +58,58 @@ void psi_skymap(psi_grid* grid, psi_int bstep) {
 			// trace the beam, then accumulate the
 			// resulting flux into the pixel
 			//trace_beam(grbp, &beam);
+
+			psi_real rmin = 0.1;
+			psi_real rmax = 20.0;
+			psi_real rstep = 1.0;
+			psi_real rold = rmin;
+			psi_real rnew;
+			while(rold < rmax) {
+				rnew = rold+rstep;
+			
+
+
+
+
+
+
+
+
+			
+			
+			
+			
+				rold = rnew;
+			}
+
 		}
 		beam.flux = vol;
 		grid->fields[0][p] += beam.flux; 
 	}
 
-	
+	psi_rtree_destroy(&rtree);
+
+#if 0
+		// refine elements into the tet buffer 
+		// loop over each tet in the buffer
+		psi_tet_buffer_refine(&tetbuf, tpos, tvel, tmass, mesh->elemtype);
+		for(t = 0; t < tetbuf.num; ++t) {
+
+			// copy the position to the ghost array and compute its aabb
+			memcpy(gpos, &tetbuf.pos[(mesh->dim+1)*t], (mesh->dim+1)*sizeof(psi_rvec));
+			psi_aabb(gpos, mesh->dim+1,grbox);
+
+			// make ghosts and sample tets to the grid
+			psi_make_ghosts(gpos, grbox, &nghosts, (mesh->dim+1), grid->window, mesh);
+			for(g = 0; g < nghosts; ++g) {
+				psi_rvec* curtet = &gpos[(mesh->dim+1)*g];
+				//if(grid->sampling == PSI_SAMPLING_VOLUME)
+					psi_voxelize_tet(&gpos[(mesh->dim+1)*g], &tetbuf.vel[(mesh->dim+1)*t], tetbuf.mass[t], &grbox[2*g], grid);
+				//else if(grid->sampling == PSI_SAMPLING_POINT)
+					//psi_point_sample_tet(&gpos[(mesh->dim+1)*g], &tetbuf.vel[(mesh->dim+1)*t], tetbuf.mass[t], &grbox[2*g], grid);
+			}
+		}
+#endif
 
 
 	// if we are in healpix, solve for the correction factors

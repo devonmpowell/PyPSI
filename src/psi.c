@@ -28,6 +28,7 @@ void psi_make_ghosts(psi_rvec* elems, psi_rvec* rboxes, psi_int* num, psi_int st
 void psi_voxels(psi_grid* grid, psi_mesh* mesh) {
 
 	psi_int e, g, t, v, nghosts, tind;
+	psi_real tmass;
 
 	// a local copy of the position in case it is modified due to periodicity
 	psi_int vpere = mesh->elemtype;
@@ -47,45 +48,30 @@ void psi_voxels(psi_grid* grid, psi_mesh* mesh) {
 	//psi_tet_buffer_init(&tetbuf, reftol, max_lvl);
 	psi_tet_buffer_init(&tetbuf, 1000.0, max_lvl);
 
-	printf("Looping over %d elements...\n", mesh->nelem);
-
 	// loop over all elements
 	for(e = 0; e < mesh->nelem; ++e) {
 
 		// a local copy of the element, in case it's modified
 		// make it periodic, get its bounding box, and check it against the grid
+		tmass = 0.0;
 		for(v = 0; v < vpere; ++v) {
 			tind = mesh->connectivity[e*vpere+v];
 			tpos[v] = mesh->pos[tind];
 			tvel[v] = mesh->vel[tind];
+			tmass += (1.0/vpere)*mesh->mass[tind]; // TODO: hack
 		}
 		if(!psi_aabb_periodic(tpos, trbox, grid->window, mesh)) continue;
 
-		//printf("Got element %d: \n", e);
-		//for(v = 0; v < vpere; ++v)
-			//printf("   - vert %d = %f %f %f\n", v, tpos[v].x, tpos[v].y, tpos[v].z);
-		//printf("   - rbox = %f %f %f to %f %f %f\n", trbox[0].x, trbox[0].y, trbox[0].z, trbox[1].x, trbox[1].y, trbox[1].z);
-
 		// refine elements into the tet buffer 
-		psi_tet_buffer_refine(&tetbuf, tpos, tvel, 1.0, mesh->elemtype);
-
-#if 1
 		// loop over each tet in the buffer
+		psi_tet_buffer_refine(&tetbuf, tpos, tvel, tmass, mesh->elemtype);
 		for(t = 0; t < tetbuf.num; ++t) {
 
 			// copy the position to the ghost array and compute its aabb
-			// TODO: do a more naive nonperiodic aabb?
-			// periodicity has already been handled here...
 			memcpy(gpos, &tetbuf.pos[(mesh->dim+1)*t], (mesh->dim+1)*sizeof(psi_rvec));
-			//if(!psi_aabb_periodic(gpos, grbox, grid->window, mesh)) continue; 
 			psi_aabb(gpos, mesh->dim+1,grbox);
 
-			//printf("     Got refined tet %d: \n", t);
-			//for(v = 0; v < 4; ++v)
-				//printf("        - vert %d = %f %f %f\n", v, gpos[v].x, gpos[v].y, gpos[v].z);
-			//printf("        - rbox = %f %f %f to %f %f %f\n", grbox[0].x, grbox[0].y, grbox[0].z, grbox[1].x, grbox[1].y, grbox[1].z);
-
-			//// make ghosts and sample tets to the grid
+			// make ghosts and sample tets to the grid
 			psi_make_ghosts(gpos, grbox, &nghosts, (mesh->dim+1), grid->window, mesh);
 			for(g = 0; g < nghosts; ++g) {
 				psi_rvec* curtet = &gpos[(mesh->dim+1)*g];
@@ -95,7 +81,6 @@ void psi_voxels(psi_grid* grid, psi_mesh* mesh) {
 					//psi_point_sample_tet(&gpos[(mesh->dim+1)*g], &tetbuf.vel[(mesh->dim+1)*t], tetbuf.mass[t], &grbox[2*g], grid);
 			}
 		}
-#endif
 	}
 	psi_tet_buffer_destroy(&tetbuf);
 }

@@ -17,11 +17,13 @@
 #include <Python.h>
 #define psi_printf PySys_WriteStdout 
 #define psi_malloc PyMem_Malloc
+#define psi_realloc PyMem_Realloc 
 #define psi_free PyMem_Free
 // otherwise, just use the standard ones
 #else
 #define psi_printf printf
 #define psi_malloc malloc
+#define psi_realloc realloc
 #define psi_free free
 #endif
 
