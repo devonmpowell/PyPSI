@@ -126,7 +126,8 @@ void psi_rtree_insert_fancy(psi_rtree_data newnode, psi_int level, psi_int split
 		// otherwise use the minimum volume increase criterion
 		if(lvl == 1) closest = psi_rtree_min_overlap(node, newnode.rbox);
 		else closest = psi_rtree_min_area(node, newnode.rbox);
-		pstack[lvl] = node; istack[lvl] = closest;
+		pstack[lvl] = node; 
+		istack[lvl] = closest;
 		node = &rtree->allnodes[node->children[closest].data];
 	} 
 

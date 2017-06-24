@@ -11,7 +11,24 @@
 #define ONE_SIXTH 0.1666666666666666666666666666666666
 #define ONE_TWLTH 0.0833333333333333333333333333333333
 
+
+typedef struct {
+	psi_rvec n;
+	psi_real d;
+} psi_plane;
+
+
+#define psi_dot3(va, vb) (va.x*vb.x + va.y*vb.y + va.z*vb.z)
+#define psi_cross3(v,u,w)          /* CROSS Vector Product */              \
+{                                                                       \
+    (v).x = (u).y*(w).z - (u).z*(w).y;                             \
+    (v).y = (u).z*(w).x - (u).x*(w).z;                             \
+    (v).z = (u).x*(w).y - (u).y*(w).x;                             \
+}
+
 psi_real psi_omega3(psi_rvec v1, psi_rvec v2, psi_rvec v3);
+
+void psi_clip_reduce_tet(psi_rvec* pos, psi_plane* clip_planes, psi_int nclip, psi_real* moments);
 
 //void psi_voxelize_tet(psi_rvec* pos, psi_rvec* vel, psi_real mass, psi_rvec* rbox, psi_dest_grid* dest_grid);
 

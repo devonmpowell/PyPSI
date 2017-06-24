@@ -22,10 +22,6 @@ typedef struct {
 	psi_dvec ibox[2];
 	psi_vertex verts[POLYSZ];
 } psi_poly; 
-typedef struct {
-	psi_rvec n;
-	psi_real d;
-} psi_plane;
 
 // struct to voxelize a polyhedron
 // contains a stack and some grid information
@@ -37,6 +33,8 @@ typedef struct {
 void psi_voxels_init(psi_voxels* vox, psi_poly* poly, psi_rvec* rbox, psi_grid* grid);
 psi_int psi_voxels_next(psi_voxels* vox, psi_real* moments, psi_int* gridind);
 
+void psi_clip(psi_poly* poly, psi_plane* planes, psi_int nplanes);
+
 // internal declarations for very low-level voxelization routines
 void psi_split_coord(psi_poly* inpoly, psi_poly* outpolys, psi_real coord, psi_int ax);
 void psi_reduce(psi_poly* poly, psi_real* moments, psi_int polyorder, psi_int weight);
@@ -45,6 +43,20 @@ void psi_init_tet(psi_poly* poly, psi_rvec* verts);
 
 psi_real psi_orient_tet(psi_rvec* pos, psi_rvec* vel);
 
+
+
+void psi_clip_reduce_tet(psi_rvec* pos, psi_plane* clip_planes, psi_int nclip, psi_real* moments) {
+
+	psi_int i, j, ii, jj, gridind;
+	psi_poly curpoly;
+
+	// initialize the tet as an edge-vertex graph 
+	// and clamp it to the grid
+	psi_init_tet(&curpoly, pos);
+	psi_clip(&curpoly, clip_planes, nclip);
+	psi_reduce(&curpoly, moments, 1, 0);
+
+}
 
 
 

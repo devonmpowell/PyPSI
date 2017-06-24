@@ -2,6 +2,8 @@
 #define _SKYMAP_
 
 #include "psi.h" 
+#include "geometry.h" 
+#include "refine.h" 
 #include "grid.h" 
 #include "mesh.h" 
 #include "rtree.h" 

@@ -14,18 +14,17 @@ class PSIMODTests(TestCase):
 
         print
         mesh = psi.Mesh(filename='data/snapshot_010', loader='gadget2')
-        print mesh.pos[mesh.connectivity][12475]
+        #print mesh.pos[mesh.connectivity][12475]
 
-        grid = psi.Grid(type='hpring', n=32) 
+        grid = psi.Grid(type='hpring', n=8) 
 
         psi.skymap(grid=grid, mesh=mesh, bstep=1)
 
+        print "mass = ", np.sum(grid.fields["m"])
+        print "mass error = ", 1.0-np.sum(grid.fields["m"])
         
         # show the pixel area plot
-        err = grid.fields["m"]/grid.d-1.0
-        cran = max(np.abs(np.min(err)), np.abs(np.max(err)))
-        hp.mollview(err, title='Pix area error', cmap=plt.cm.RdYlGn,
-                min=-cran, max=cran)
+        hp.mollview(np.log10(grid.fields['m']), title='Mass map')
         plt.show()
 
     def test_voxels(self):
