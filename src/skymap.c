@@ -42,6 +42,9 @@ void psi_skymap(psi_grid* grid, psi_int bstep) {
 		grid->fields[0][p] += beam.flux; 
 	}
 
+	
+
+
 	// if we are in healpix, solve for the correction factors
 	// that make it truly equal-area
 	//if(grbp->pix_type == PIX_HEALPIX)

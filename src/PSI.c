@@ -10,15 +10,16 @@
 
 #define MAKE_PY_NONE Py_BuildValue("")
 
+
 /////////////////////////////////////////////////////////////
 //   Define Python type structs and conversion functions up front 
 /////////////////////////////////////////////////////////////
 
 typedef struct {
     PyObject_HEAD
-    PyObject *type; 
-    PyObject *filename; 
-    PyArrayObject *pos, *vel, *mass;
+    PyObject *pos, *vel, *mass;
+    PyObject *connectivity;
+    PyObject *boxmin, *boxmax;
 } Mesh;
 
 typedef struct {
@@ -30,26 +31,85 @@ typedef struct {
 	PyObject* d; // tuple of dx in each dimension
 } Grid;
 
+static void PSI_Mesh2mesh(Mesh* mesh, psi_mesh* cmesh) {
+
+	// parse a simple C struct from a Python object 
+	psi_int ax;
+	PyObject* seq;
+	npy_intp* npdims;
+
+	memset(cmesh, 0, sizeof(psi_mesh));
+   
+	// get the dimensionality based on shape of pos 
+	// elemtype based on shape of connectivity 
+	npdims = PyArray_SHAPE((PyArrayObject*)mesh->pos);
+	cmesh->dim = npdims[1];
+	cmesh->npart = npdims[0];
+	npdims = PyArray_SHAPE((PyArrayObject*)mesh->connectivity);
+	cmesh->elemtype = npdims[1];
+	cmesh->nelem = npdims[0];
+
+	// get periodicity based on whether boxmin, boxmax exist
+	if(PySequence_Check(mesh->boxmin) && PySequence_Check(mesh->boxmax)){
+		cmesh->periodic = 1;
+		seq = PySequence_Fast(mesh->boxmin, "expected a box tuple");
+		for(ax = 0; ax < cmesh->dim; ++ax)
+			cmesh->box[0].xyz[ax] = PyFloat_AS_DOUBLE(PySequence_Fast_GET_ITEM(seq, ax));
+		seq = PySequence_Fast(mesh->boxmax, "expected a box tuple");
+		for(ax = 0; ax < cmesh->dim; ++ax)
+			cmesh->box[1].xyz[ax] = PyFloat_AS_DOUBLE(PySequence_Fast_GET_ITEM(seq, ax));
+	}
+	else {
+		cmesh->periodic = 0;
+	}
+
+	// set array pointers
+	// TODO: mass...
+	cmesh->pos = PyArray_DATA((PyArrayObject*)mesh->pos);
+	cmesh->vel = PyArray_DATA((PyArrayObject*)mesh->vel);
+	cmesh->connectivity = PyArray_DATA((PyArrayObject*)mesh->connectivity);
+
+}
+
+
+
 static void PSI_Grid2grid(Grid* grid, psi_grid* cgrid) {
 
 	// parse a simple C struct from a Python object 
 	psi_int ax;
 	PyObject* seq;
-	cgrid->type = PyString_AsString(grid->type);
+	char* cstr;
+
+	// clear everything first
+	memset(cgrid, 0, sizeof(psi_grid));
+   
+	// get the enum grid type
+	cstr = PyString_AsString(grid->type);
+	if(strcmp(cstr, "cart") == 0)
+		cgrid->type = PSI_GRID_CART;
+	else if(strcmp(cstr, "hpring") == 0)
+		cgrid->type = PSI_GRID_HPRING;
+	else
+		cgrid->type = -1;
+
+	// get the grid dimensions, dx, etc
+	cgrid->dim = PySequence_Length(grid->n);
 	seq = PySequence_Fast(grid->n, "expected a grid dim tuple");
-	for(ax = 0; ax < 3; ++ax)
+	for(ax = 0; ax < cgrid->dim; ++ax)
 		cgrid->n.ijk[ax] = PyInt_AS_LONG(PySequence_Fast_GET_ITEM(seq, ax));
+	
+	
 	if(PySequence_Check(grid->winmin)) {
 		seq = PySequence_Fast(grid->winmin, "expected a grid window tuple");
-		for(ax = 0; ax < 3; ++ax)
-			cgrid->winmin.xyz[ax] = PyFloat_AS_DOUBLE(PySequence_Fast_GET_ITEM(seq, ax));
+		for(ax = 0; ax < cgrid->dim; ++ax)
+			cgrid->window[0].xyz[ax] = PyFloat_AS_DOUBLE(PySequence_Fast_GET_ITEM(seq, ax));
 		seq = PySequence_Fast(grid->winmax, "expected a grid window tuple");
-		for(ax = 0; ax < 3; ++ax)
-			cgrid->winmax.xyz[ax] = PyFloat_AS_DOUBLE(PySequence_Fast_GET_ITEM(seq, ax));
+		for(ax = 0; ax < cgrid->dim; ++ax)
+			cgrid->window[1].xyz[ax] = PyFloat_AS_DOUBLE(PySequence_Fast_GET_ITEM(seq, ax));
 	}
 	if(PySequence_Check(grid->d)) {
 		seq = PySequence_Fast(grid->d, "expected a grid dx tuple");
-		for(ax = 0; ax < 3; ++ax)
+		for(ax = 0; ax < cgrid->dim; ++ax)
 			cgrid->d.xyz[ax] = PyFloat_AS_DOUBLE(PySequence_Fast_GET_ITEM(seq, ax));
 	}
 	else if(PyFloat_Check(grid->d)) {
@@ -67,48 +127,55 @@ static void PSI_Grid2grid(Grid* grid, psi_grid* cgrid) {
 
 static int Mesh_init(Mesh *self, PyObject *args, PyObject *kwds) {
 
-	psi_int nside;
 	psi_mesh cmesh;
+	char* cloader, *cfile;
 	npy_intp npdims[6];
-	PyObject* pyfile, *pytype;
-	static char *kwlist[] = {"filename", "type", NULL};
+	static char *kwlist[] = {"filename", "loader", NULL};
 
 	// parse arguments differently depending on what the grid type is
 	// certain grid types must correspond to certain arg patterns
-	pyfile = NULL;
-	pytype = NULL;
-	if(!PyArg_ParseTupleAndKeywords(args, kwds, "SS", kwlist, &pyfile, &pytype))
+	if(!PyArg_ParseTupleAndKeywords(args, kwds, "ss", kwlist, &cfile, &cloader))
 			return -1;
 
 	// fill in all grid information as Python tuples
-	self->type = pytype;
-	self->filename = pyfile;
-	cmesh.type = PyString_AsString(pytype);
-	if(strcmp(cmesh.type, "gadget2") == 0) {
+	if(strcmp(cloader, "gadget2") == 0) {
+
+		psi_printf("Using the Gadget2 loader.\n");
 
 		// peek at the file first to make sure it's there
 		// and to get header information
-		if(!peek_gadget2(&cmesh, PyString_AsString(pyfile)))
+		if(!peek_gadget2(&cmesh, cfile))
 			return -1;
 
 		// wrap the cmesh data in a cubical Numpy array
-		nside = floor(pow(cmesh.npart+0.5, ONE_THIRD));
-		npdims[0] = nside;
-		npdims[1] = nside;
-		npdims[2] = nside;
-		npdims[3] = 3;
-		self->pos = (PyArrayObject*)PyArray_SimpleNew(4, npdims, NPY_DOUBLE);
-		self->vel = (PyArrayObject*)PyArray_SimpleNew(4, npdims, NPY_DOUBLE);
-		if(!self->pos || !self->vel) {
-			printf("new array fail!\n");
+		npdims[0] = cmesh.npart;
+		npdims[1] = cmesh.dim;
+		self->pos = PyArray_SimpleNew(2, npdims, NPY_DOUBLE);
+		self->vel = PyArray_SimpleNew(2, npdims, NPY_DOUBLE);
+		npdims[0] = cmesh.nelem;
+		npdims[1] = psi_verts_per_elem(cmesh.elemtype); 
+		self->connectivity = PyArray_SimpleNew(2, npdims, NPY_INT32);
+		if(!self->pos || !self->vel || !self->connectivity) {
+			psi_printf("new array fail!\n");
 			return -1;
 		} 
-		cmesh.pos = PyArray_DATA(self->pos);
-		cmesh.vel = PyArray_DATA(self->vel);
+		if(cmesh.periodic) {
+			self->boxmin = Py_BuildValue("(ddd)", cmesh.box[0].x, cmesh.box[0].y, cmesh.box[0].z);
+			self->boxmax = Py_BuildValue("(ddd)", cmesh.box[1].x, cmesh.box[1].y, cmesh.box[1].z);
+		}
+		else {
+			self->boxmin = MAKE_PY_NONE;
+			self->boxmax = MAKE_PY_NONE;
+		}
+
+		cmesh.pos = PyArray_DATA((PyArrayObject*)self->pos);
+		cmesh.vel = PyArray_DATA((PyArrayObject*)self->vel);
+		cmesh.connectivity = PyArray_DATA((PyArrayObject*)self->connectivity);
 
 		// load the data into the numpy buffers
-		if(!load_gadget2(&cmesh, PyString_AsString(pyfile)))
+		if(!load_gadget2(&cmesh, cfile))
 			return -1;
+
 	}
 	else {
 		return -1;
@@ -125,16 +192,22 @@ static PyObject* Mesh_new(PyTypeObject *type, PyObject *args, PyObject *kwds) {
 
 
 static void Mesh_dealloc(Mesh* self) {
-    Py_XDECREF(self->type);
-    Py_XDECREF(self->filename);
+    Py_XDECREF(self->pos);
+    Py_XDECREF(self->vel);
+    Py_XDECREF(self->mass);
+    Py_XDECREF(self->connectivity);
+    Py_XDECREF(self->boxmin);
+    Py_XDECREF(self->boxmax);
     Py_TYPE(self)->tp_free((PyObject*)self);
 }
 
 static PyMemberDef Mesh_members[] = {
-    {"type", T_OBJECT_EX, offsetof(Mesh, type), 0, "type"},
-    {"filename", T_OBJECT_EX, offsetof(Mesh, filename), 0, "filename"},
     {"pos", T_OBJECT_EX, offsetof(Mesh, pos), 0, "pos"},
     {"vel", T_OBJECT_EX, offsetof(Mesh, vel), 0, "vel"},
+    {"mass", T_OBJECT_EX, offsetof(Mesh, mass), 0, "mass"},
+    {"connectivity", T_OBJECT_EX, offsetof(Mesh, connectivity), 0, "connectivity"},
+    {"boxmin", T_OBJECT_EX, offsetof(Mesh, boxmin), 0, "boxmin"},
+    {"boxmax", T_OBJECT_EX, offsetof(Mesh, boxmax), 0, "boxmax"},
     {NULL}  /* Sentinel */
 };
 
@@ -218,79 +291,81 @@ static PyObject* Grid_getCellGeometry(Grid *self, PyObject *args, PyObject *kwds
 	// make the return tuple based on the number of input elements
 	// process for different indexing protocols
 	PSI_Grid2grid(self, &cgrid);
-	if(strcmp(cgrid.type, "cart3d") == 0) {
-	
-		// TODO: implement this
-		slen = 16;
-	
-		// create the output array in the correct shape (flat for hp)
-		// get direct pointers to the data
-		npdims[0] = slen;
-		npdims[1] = 3;
-		cverts = PyArray_SimpleNew(2, npdims, NPY_DOUBLE);
-		npdims[1] = 4;
-		npdims[2] = 3;
-		bverts = PyArray_SimpleNew(3, npdims, NPY_DOUBLE);
-		pyvol = PyArray_SimpleNew(1, npdims, NPY_DOUBLE);
-
+	switch(cgrid.type) {
 		
+		case PSI_GRID_CART:
 
-	}
-	else if(strcmp(cgrid.type, "hpring") == 0) {
+			// TODO: implement this
+			slen = 16;
+		
+			// create the output array in the correct shape (flat for hp)
+			// get direct pointers to the data
+			npdims[0] = slen;
+			npdims[1] = 3;
+			cverts = PyArray_SimpleNew(2, npdims, NPY_DOUBLE);
+			npdims[1] = 4;
+			npdims[2] = 3;
+			bverts = PyArray_SimpleNew(3, npdims, NPY_DOUBLE);
+			pyvol = PyArray_SimpleNew(1, npdims, NPY_DOUBLE);
+			break;
 
-		// do different things if we are given a list of pixels
-		// or all pixels
-		// hpring is indexed by an integer
-		if(allcells) {
-			// get npix directly, it is stored in grid.n
-			slen = cgrid.n.k; 
-		}
-		else {
-			// check that we have a sequence of integers
-			// get its length
-			seq = PySequence_Fast(pyind, "not a sequence");
-			slen = PySequence_Fast_GET_SIZE(seq);
-			if(slen <= 0 || !PyInt_Check(PySequence_Fast_GET_ITEM(seq, 0))) 
-				return MAKE_PY_NONE;
-		}
+		case PSI_GRID_HPRING:
 
-		// create the output array in the correct shape (flat for hp)
-		// get direct pointers to the data
-		// iterate over all integer indices in the sequence
-		// or all cells if cells=None
-		npdims[0] = slen;
-		npdims[1] = 3;
-		cverts = PyArray_SimpleNew(2, npdims, NPY_DOUBLE);
-		npdims[1] = 4*bstep;
-		npdims[2] = 3;
-		bverts = PyArray_SimpleNew(3, npdims, NPY_DOUBLE);
-		pyvol = PyArray_SimpleNew(1, npdims, NPY_DOUBLE);
-
-		cvdata = PyArray_DATA((PyArrayObject*)cverts);
-		bvdata = PyArray_DATA((PyArrayObject*)bverts);
-		pvdata = PyArray_DATA((PyArrayObject*)pyvol);
-		for(i = 0; i < slen; ++i) {
-			if(allcells) grind.i = i;
-			else grind.i = PyInt_AsLong(PySequence_Fast_GET_ITEM(seq, i));
-
-			// retrieve the grid geometry from the C lib
-			// set the array elements 
-			if(!psi_grid_get_cell_geometry(&cgrid, grind, bstep, boundary, &center, &vol)) {
-				printf("bad geometry\n");
-				return MAKE_PY_NONE;
-			} 
-			for(ax = 0; ax < 3; ++ax)
-				cvdata[3*i+ax] = center.xyz[ax];
-			for(v = 0; v < 4*bstep; ++v)
+			// do different things if we are given a list of pixels
+			// or all pixels
+			// hpring is indexed by an integer
+			if(allcells) {
+				// get npix directly, it is stored in grid.n
+				slen = cgrid.n.k; 
+			}
+			else {
+				// check that we have a sequence of integers
+				// get its length
+				seq = PySequence_Fast(pyind, "not a sequence");
+				slen = PySequence_Fast_GET_SIZE(seq);
+				if(slen <= 0 || !PyInt_Check(PySequence_Fast_GET_ITEM(seq, 0))) 
+					return MAKE_PY_NONE;
+			}
+	
+			// create the output array in the correct shape (flat for hp)
+			// get direct pointers to the data
+			// iterate over all integer indices in the sequence
+			// or all cells if cells=None
+			npdims[0] = slen;
+			npdims[1] = 3;
+			cverts = PyArray_SimpleNew(2, npdims, NPY_DOUBLE);
+			npdims[1] = 4*bstep;
+			npdims[2] = 3;
+			bverts = PyArray_SimpleNew(3, npdims, NPY_DOUBLE);
+			pyvol = PyArray_SimpleNew(1, npdims, NPY_DOUBLE);
+	
+			cvdata = PyArray_DATA((PyArrayObject*)cverts);
+			bvdata = PyArray_DATA((PyArrayObject*)bverts);
+			pvdata = PyArray_DATA((PyArrayObject*)pyvol);
+			for(i = 0; i < slen; ++i) {
+				if(allcells) grind.i = i;
+				else grind.i = PyInt_AsLong(PySequence_Fast_GET_ITEM(seq, i));
+	
+				// retrieve the grid geometry from the C lib
+				// set the array elements 
+				if(!psi_grid_get_cell_geometry(&cgrid, grind, bstep, boundary, &center, &vol)) {
+					printf("bad geometry\n");
+					return MAKE_PY_NONE;
+				} 
 				for(ax = 0; ax < 3; ++ax)
-					bvdata[12*bstep*i+3*v+ax] = boundary[v].xyz[ax];
-			pvdata[i] = vol; 
-		}
-	}
-	else {
-		// TODO: error handling
-		printf("Bad grid type\n");
-		return MAKE_PY_NONE;
+					cvdata[3*i+ax] = center.xyz[ax];
+				for(v = 0; v < 4*bstep; ++v)
+					for(ax = 0; ax < 3; ++ax)
+						bvdata[12*bstep*i+3*v+ax] = boundary[v].xyz[ax];
+				pvdata[i] = vol; 
+			}
+
+			break;
+
+
+		default:
+			psi_printf("Bad grid type\n");
+			return MAKE_PY_NONE;
 	}
 	
 	return Py_BuildValue("(NNN)", PyArray_Return((PyArrayObject*)cverts), 
@@ -313,8 +388,8 @@ static int Grid_init(Grid *self, PyObject *args, PyObject *kwds) {
 	dim = 0;
 	memset(npdims, 0, sizeof(npdims));
 	for(ax = 0; ax < 3; ++ax) {
-		cgrid.winmin.xyz[ax] = 0.0;
-		cgrid.winmax.xyz[ax] = 1.0;
+		cgrid.window[0].xyz[ax] = 0.0;
+		cgrid.window[1].xyz[ax] = 1.0;
 		cgrid.n.ijk[ax] = 32;
 	}
 
@@ -322,17 +397,17 @@ static int Grid_init(Grid *self, PyObject *args, PyObject *kwds) {
 	// parse arguments differently depending on what the grid type is
 	// certain grid types must correspond to certain arg patterns
 	type = PyString_AsString(PyDict_GetItemString(kwds, "type"));
-	if(strcmp(type, "cart3d") == 0 && 
-			PyArg_ParseTupleAndKeywords(args, kwds, "S|((ddd)(ddd))(iii)", kwlist, // for cart3d 
-			&pytype, &cgrid.winmin.x, &cgrid.winmin.y, &cgrid.winmin.z, 
-			&cgrid.winmax.x, &cgrid.winmax.y, &cgrid.winmax.z, &cgrid.n.i, &cgrid.n.j, &cgrid.n.k)) {
+	if(strcmp(type, "cart") == 0 && 
+			PyArg_ParseTupleAndKeywords(args, kwds, "S|((ddd)(ddd))(iii)", kwlist, // for cart 
+			&pytype, &cgrid.window[0].x, &cgrid.window[0].y, &cgrid.window[0].z, 
+			&cgrid.window[1].x, &cgrid.window[1].y, &cgrid.window[1].z, &cgrid.n.i, &cgrid.n.j, &cgrid.n.k)) {
 
 		// fill in all grid information as Python tuples
 		self->type = pytype; 
-		self->winmin = Py_BuildValue("(ddd)", cgrid.winmin.x, cgrid.winmin.y, cgrid.winmin.z); 
-		self->winmax = Py_BuildValue("(ddd)", cgrid.winmax.x, cgrid.winmax.y, cgrid.winmax.z); 
+		self->winmin = Py_BuildValue("(ddd)", cgrid.window[0].x, cgrid.window[0].y, cgrid.window[0].z); 
+		self->winmax = Py_BuildValue("(ddd)", cgrid.window[1].x, cgrid.window[1].y, cgrid.window[1].z); 
 		self->n = Py_BuildValue("(iii)", cgrid.n.i, cgrid.n.j, cgrid.n.k); 
-		self->d = Py_BuildValue("(ddd)", (cgrid.winmax.x-cgrid.winmin.x)/cgrid.n.i, (cgrid.winmax.y-cgrid.winmin.y)/cgrid.n.j, (cgrid.winmax.z-cgrid.winmin.z)/cgrid.n.k); 
+		self->d = Py_BuildValue("(ddd)", (cgrid.window[1].x-cgrid.window[0].x)/cgrid.n.i, (cgrid.window[1].y-cgrid.window[0].y)/cgrid.n.j, (cgrid.window[1].z-cgrid.window[0].z)/cgrid.n.k); 
 		npdims[0] = cgrid.n.i;
 		npdims[1] = cgrid.n.j;
 		npdims[2] = cgrid.n.k;
@@ -471,21 +546,41 @@ static PyObject *PSI_skymap(PyObject *self, PyObject *args, PyObject* kwds) {
 	printf("npart = %d\n", (int)nverts);
 	//for(p = 0; p < )
 	
-
 	PSI_Grid2grid(grid, &cgrid);
-	if(strcmp(cgrid.type, "hpring") != 0) 
+	if(cgrid.type != PSI_GRID_HPRING || cgrid.dim != 3) 
 		Py_RETURN_NONE;
 
 	printf("----Making hpring skymap-----\n");
 
-
 	psi_skymap(&cgrid, bstep);
-
-
 
    /* Do your stuff here. */
    Py_RETURN_NONE;
+}
 
+static PyObject *PSI_voxels(PyObject *self, PyObject *args, PyObject* kwds) {
+
+	psi_grid cgrid;
+	psi_mesh cmesh;
+	Mesh* mesh;
+	Grid* grid;	
+	//npy_intp* npdims;
+	npy_intp nverts;
+	static char *kwlist[] = {"grid", "mesh", NULL};
+
+	if(!PyArg_ParseTupleAndKeywords(args, kwds, "OO", kwlist, &grid, &mesh))
+		return MAKE_PY_NONE;
+
+	PSI_Grid2grid(grid, &cgrid);
+	PSI_Mesh2mesh(mesh, &cmesh);
+	if(cgrid.type != PSI_GRID_CART) 
+		Py_RETURN_NONE;
+	if(cmesh.dim != cgrid.dim)
+		Py_RETURN_NONE;
+
+	psi_voxels(&cgrid, &cmesh);
+
+   Py_RETURN_NONE;
 }
 
 /////////////////////////////////////////////////////////////
@@ -502,6 +597,7 @@ static PyObject *PSI_skymap(PyObject *self, PyObject *args, PyObject* kwds) {
 
 static PyMethodDef module_methods[] = {
    	{"skymap", (PyCFunction)PSI_skymap, METH_KEYWORDS, "Makes a skymap"},
+   	{"voxels", (PyCFunction)PSI_voxels, METH_KEYWORDS, "Voxelizes"},
     {NULL, NULL, 0, NULL}
 };
 

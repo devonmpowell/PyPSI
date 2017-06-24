@@ -13,32 +13,59 @@ class PSIMODTests(TestCase):
     def test_skymap(self):
 
         print
-        mesh = psi.Mesh(filename='data/snapshot_010', type='gadget2')
-        grid = psi.Grid(type='hpring', n=16) 
+        mesh = psi.Mesh(filename='data/snapshot_010', loader='gadget2')
+        print mesh.pos[mesh.connectivity][12475]
 
-        psi.skymap(grid=grid, mesh=mesh, bstep=1)
-        print "skymap n=", grid.n
+        grid = psi.Grid(type='hpring', n=32) 
 
-        hp.mollview(grid.fields["m"]/grid.d, title='Pix area fraction')
+        psi.skymap(grid=grid, mesh=mesh, bstep=4)
+
+        
+        # show the pixel area plot
+        #err = grid.fields["m"]/grid.d-1.0
+        #cran = max(np.abs(np.min(err)), np.abs(np.max(err)))
+        #hp.mollview(err, title='Pix area error', cmap=plt.cm.RdYlGn,
+                #min=-cran, max=cran)
+        #plt.show()
+
+    def test_voxels(self):
+
+        print
+        mesh = psi.Mesh(filename='data/snapshot_010', loader='gadget2')
+        #print mesh.pos[mesh.connectivity][12475]
+
+        grid = psi.Grid(type='cart', n=(128,128,128), window=(mesh.boxmin, mesh.boxmax)) 
+        #grid = psi.Grid(type='cart', n=(128,128,128), window=((-1,-1,-1),(45,45,45))) 
+
+        psi.voxels(grid=grid, mesh=mesh)
+
+        plt.imshow(np.log10(grid.fields["m"][:,:,32]))
         plt.show()
-        #print grid.fields["m"]
-        #print grid.fields["m"]
+
+        print "mass sum = ", np.sum(grid.fields["m"])
+        
+        # show the pixel area plot
+        #err = grid.fields["m"]/grid.d-1.0
+        #cran = max(np.abs(np.min(err)), np.abs(np.max(err)))
+        #hp.mollview(err, title='Pix area error', cmap=plt.cm.RdYlGn,
+                #min=-cran, max=cran)
+        #plt.show()
+
 
 
 # test basic Grid functionality 
 class GridTests(TestCase):
 
-    def test_grid_cart3d(self):
+    def test_grid_cart(self):
         print
-        grid = psi.Grid(type='cart3d', n=(10,10,10)) # default is 64^3 unit box
+        grid = psi.Grid(type='cart', n=(10,10,10)) # default is 64^3 unit box
         print ' - type =', grid.type 
         print ' - fields =', grid.fields['m'].dtype, grid.fields['m'].shape
         print ' - window =', grid.winmin, grid.winmax
         print ' - n =', grid.n
         print ' - d =', grid.d
-        #print grid.getCellGeometry(cell=[123])
         center, boundary, vol = grid.getCellGeometry(cell=[123])
-        print center.shape, boundary.shape, vol.shape
+        #print center.shape, boundary.shape, vol.shape
         #print center, boundary, vol
         del grid
 
@@ -52,10 +79,7 @@ class GridTests(TestCase):
         print ' - d =', grid.d
 
         # get a pixel boundary
-        center, boundary, vol = grid.getCellGeometry(cell=[123, 456], bstep=2)
-        print center
-        print boundary
-        print vol
+        center, boundary, vol = grid.getCellGeometry(cell=None, bstep=2)
         del grid
 
 
@@ -63,13 +87,13 @@ class GridTests(TestCase):
 # test basic Mesh functionality 
 class MeshTests(TestCase):
 
-    def testMeshInit(self):
+    def test_mesh_init(self):
         print
-        mesh = psi.Mesh(filename='data/snapshot_010', type='gadget2')
-        print ' - type =', mesh.type
-        print ' - file =', mesh.filename
+        mesh = psi.Mesh(filename='data/snapshot_010', loader='gadget2')
         print ' - pos =', mesh.pos.dtype, mesh.pos.shape
         print ' - vel =', mesh.vel.dtype, mesh.vel.shape
+        print ' - conn =', mesh.connectivity.dtype, mesh.connectivity.shape
+        print ' - box =', mesh.boxmin, mesh.boxmax
         del mesh
 
 if __name__ == '__main__':

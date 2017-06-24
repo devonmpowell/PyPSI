@@ -4,11 +4,11 @@
 #include "psi.h"
 #include "geometry.h"
 
-#define PSI_GRID_CART3D 0
+#define PSI_GRID_CART 0
 #define PSI_GRID_HPRING 1
 
 // field tags
-#define PSI_GRID_W 0 // weight (usually mass)
+#define PSI_GRID_M 0 // weight (usually mass)
 #define PSI_GRID_X 1 // position
 #define PSI_GRID_V 2 // velocity
 #define PSI_GRID_XX 3
@@ -22,9 +22,10 @@
 // structure to hold voxelization info
 // remains the same regardless of dimensionality
 typedef struct {
-	char* type;
+	psi_int type;
+	psi_int dim; 
 	psi_real* fields[16];
-	psi_rvec winmin, winmax;
+	psi_rvec window[2];
 	psi_dvec n;
 	psi_rvec d;
 } psi_grid;

@@ -1,6 +1,5 @@
 #include "geometry.h"
 
-#if 0
 // geometry-related constants
 #if PSI_NDIM == 3
 #define PSI_TET_FAC ONE_SIXTH 
@@ -33,9 +32,9 @@ typedef struct {
 typedef struct {
 	psi_poly stack[32]; // TODO: how big to make this??
 	psi_int nstack;
-	psi_dest_grid* grid;
+	psi_grid* grid;
 } psi_voxels;
-void psi_voxels_init(psi_voxels* vox, psi_poly* poly, psi_rvec* rbox, psi_dest_grid* grid);
+void psi_voxels_init(psi_voxels* vox, psi_poly* poly, psi_rvec* rbox, psi_grid* grid);
 psi_int psi_voxels_next(psi_voxels* vox, psi_real* moments, psi_int* gridind);
 
 // internal declarations for very low-level voxelization routines
@@ -46,6 +45,133 @@ void psi_init_tet(psi_poly* poly, psi_rvec* verts);
 
 psi_real psi_orient_tet(psi_rvec* pos, psi_rvec* vel);
 
+
+
+
+
+
+void psi_voxelize_tet(psi_rvec* pos, psi_rvec* vel, psi_real mass, psi_rvec* rbox, psi_grid* grid) {
+
+	psi_int i, j, ii, jj, gridind;
+	psi_real cm[PSI_NDIM], cv[PSI_NDIM], sxx[PSI_NDIM][PSI_NDIM], sxv[PSI_NDIM][PSI_NDIM], svv[PSI_NDIM][PSI_NDIM];
+	psi_real cwght, dwght;
+	psi_real DX[PSI_NDIM][PSI_NDIM], DV[PSI_NDIM][PSI_NDIM];
+	psi_real moments[10];
+	psi_poly curpoly;
+
+#if PSI_NDIM == 3
+	const static psi_int qinds[3][3] = {{4,5,6},{5,7,8},{6,8,9}};
+#elif PSI_NDIM == 2
+	const static psi_int qinds[2][2] = {{3,4},{4,5}};
+#endif
+
+	// set mass to the volume if volume-weighted
+	// TODO: this swaps vertices if needed. Maybe do a more naive implementation?
+	//if(grid->weight == PSI_GRID_MEIGHT_VOL) mass = psi_orient_tet(pos, vel); 
+
+	// deformation matrices for the input tet's mass coordinates
+	for(i = 0; i < PSI_NDIM; ++i)
+	for(j = 0; j < PSI_NDIM; ++j) {
+		DX[i][j] = pos[j+1].xyz[i]-pos[0].xyz[i];
+		DV[i][j] = vel[j+1].xyz[i]-vel[0].xyz[i];
+	}
+
+	// initialize the tet as an edge-vertex graph 
+	// and clamp it to the grid
+	psi_init_tet(&curpoly, pos);
+
+	// initialize the voxelization iterator
+	psi_voxels vox;
+	psi_voxels_init(&vox, &curpoly, rbox, grid);
+	while(psi_voxels_next(&vox, moments, &gridind)) {
+	
+		// get moments for this fragment from the mass coordinates 
+		if(grid->fields[PSI_GRID_X])
+			for(i = 0; i < PSI_NDIM; ++i) {
+				cm[i] = moments[0]*pos[0].xyz[i];
+				for(j = 0; j < PSI_NDIM; ++j)
+					cm[i] += moments[j+1]*DX[i][j];
+				cm[i] /= moments[0];
+			}
+		if(grid->fields[PSI_GRID_V])
+			for(i = 0; i < PSI_NDIM; ++i) {
+				cv[i] = moments[0]*vel[0].xyz[i];
+				for(j = 0; j < PSI_NDIM; ++j)
+					cv[i] += moments[j+1]*DV[i][j];
+				cv[i] /= moments[0];
+			}
+		if(grid->fields[PSI_GRID_XX]) {
+			for(i = 0; i < PSI_NDIM; ++i) 
+			for(j = 0; j < PSI_NDIM; ++j)  {
+				sxx[i][j] = moments[0]*(pos[0].xyz[i]-cm[i])*(pos[0].xyz[j]-cm[j]);
+				for(ii = 0; ii < PSI_NDIM; ++ii) {
+					sxx[i][j] += DX[i][ii]*moments[1+ii]*(pos[0].xyz[j]-cm[j]);
+					sxx[i][j] += DX[j][ii]*moments[1+ii]*(pos[0].xyz[i]-cm[i]);
+				}
+				for(ii = 0; ii < PSI_NDIM; ++ii)
+				for(jj = 0; jj < PSI_NDIM; ++jj)
+					sxx[i][j] += DX[i][ii]*DX[j][jj]*moments[qinds[ii][jj]];
+				sxx[i][j] /= moments[0];
+			}
+		}
+		if(grid->fields[PSI_GRID_XV]) {
+			for(i = 0; i < PSI_NDIM; ++i) 
+			for(j = 0; j < PSI_NDIM; ++j)  {
+				sxv[i][j] = moments[0]*(pos[0].xyz[i]-cm[i])*(vel[0].xyz[j]-cv[j]);
+				for(ii = 0; ii < PSI_NDIM; ++ii) {
+					sxv[i][j] += DX[i][ii]*moments[1+ii]*(pos[0].xyz[j]-cm[j]);
+					sxv[i][j] += DV[j][ii]*moments[1+ii]*(vel[0].xyz[i]-cv[i]);
+				}
+				for(ii = 0; ii < PSI_NDIM; ++ii)
+				for(jj = 0; jj < PSI_NDIM; ++jj)
+					sxv[i][j] += DX[i][ii]*DV[j][jj]*moments[qinds[ii][jj]];
+				sxv[i][j] /= moments[0];
+			}
+		}
+		if(grid->fields[PSI_GRID_VV]) {
+			for(i = 0; i < PSI_NDIM; ++i) 
+			for(j = 0; j < PSI_NDIM; ++j)  {
+				svv[i][j] = moments[0]*(vel[0].xyz[i]-cv[i])*(vel[0].xyz[j]-cv[j]);
+				for(ii = 0; ii < PSI_NDIM; ++ii) {
+					svv[i][j] += DV[i][ii]*moments[1+ii]*(vel[0].xyz[j]-cv[j]);
+					svv[i][j] += DV[j][ii]*moments[1+ii]*(vel[0].xyz[i]-cv[i]);
+				}
+				for(ii = 0; ii < PSI_NDIM; ++ii)
+				for(jj = 0; jj < PSI_NDIM; ++jj)
+					svv[i][j] += DV[i][ii]*DV[j][jj]*moments[qinds[ii][jj]];
+				svv[i][j] /= moments[0];
+			}
+		}
+
+		// update everything online 
+		cwght = mass*moments[0]/(grid->fields[PSI_GRID_M][gridind] + mass*moments[0]); 
+		dwght = grid->fields[PSI_GRID_M][gridind]/(grid->fields[PSI_GRID_M][gridind] + mass*moments[0]); 
+		if(grid->fields[PSI_GRID_XX]) for(i = 0; i < PSI_NDIM; ++i) for(j = 0; j < PSI_NDIM; ++j) {
+			grid->fields[PSI_GRID_XX][PSI_NDIM*PSI_NDIM*gridind+PSI_NDIM*i+j] = 
+				dwght*grid->fields[PSI_GRID_XX][PSI_NDIM*PSI_NDIM*gridind+PSI_NDIM*i+j] + cwght*sxx[i][j] 
+				+ cwght*dwght*(cm[i]-grid->fields[PSI_GRID_X][PSI_NDIM*gridind+i])*(cm[j]-grid->fields[PSI_GRID_X][PSI_NDIM*gridind+j]);
+		}
+		if(grid->fields[PSI_GRID_XV]) for(i = 0; i < PSI_NDIM; ++i) for(j = 0; j < PSI_NDIM; ++j) {
+			grid->fields[PSI_GRID_XV][PSI_NDIM*PSI_NDIM*gridind+PSI_NDIM*i+j] = 
+				dwght*grid->fields[PSI_GRID_XV][PSI_NDIM*PSI_NDIM*gridind+PSI_NDIM*i+j] + cwght*sxv[i][j] 
+				+ cwght*dwght*(cm[i]-grid->fields[PSI_GRID_X][PSI_NDIM*gridind+i])*(cv[j]-grid->fields[PSI_GRID_V][PSI_NDIM*gridind+j]);
+		}
+		if(grid->fields[PSI_GRID_VV]) for(i = 0; i < PSI_NDIM; ++i) for(j = 0; j < PSI_NDIM; ++j) {
+			grid->fields[PSI_GRID_VV][PSI_NDIM*PSI_NDIM*gridind+PSI_NDIM*i+j] = 
+				dwght*grid->fields[PSI_GRID_VV][PSI_NDIM*PSI_NDIM*gridind+PSI_NDIM*i+j] + cwght*svv[i][j] 
+				+ cwght*dwght*(cv[i]-grid->fields[PSI_GRID_V][PSI_NDIM*gridind+i])*(cv[j]-grid->fields[PSI_GRID_V][PSI_NDIM*gridind+j]);
+		}
+		if(grid->fields[PSI_GRID_X]) for(i = 0; i < PSI_NDIM; ++i) 
+			grid->fields[PSI_GRID_X][PSI_NDIM*gridind+i] += cwght*(cm[i]-grid->fields[PSI_GRID_X][PSI_NDIM*gridind+i]);
+		if(grid->fields[PSI_GRID_V]) for(i = 0; i < PSI_NDIM; ++i) 
+			grid->fields[PSI_GRID_V][PSI_NDIM*gridind+i] += cwght*(cv[i]-grid->fields[PSI_GRID_V][PSI_NDIM*gridind+i]);
+
+		if(grid->fields[PSI_GRID_M]) grid->fields[PSI_GRID_M][gridind] += mass*moments[0];
+	}
+}
+
+
+#if 0
 
 //void psi_voxelize_annihilation(psi_rvec* pos[2], psi_rvec* vel[2], psi_real mass[2], psi_dest_grid* dest_grid) {
 void psi_voxelize_annihilation(psi_rvec* pos0, psi_rvec* vel0, psi_real mass0, psi_rvec* rbox0, 
@@ -82,7 +208,7 @@ void psi_voxelize_annihilation(psi_rvec* pos0, psi_rvec* vel0, psi_real mass0, p
 	// voxelize
 	psi_voxels_init(&vox, &curpoly, mbox, dest_grid);
 	while(psi_voxels_next(&vox, moments, &gridind)) {
-		dest_grid->fields[PSI_W][gridind] += 0.5*rho0*rho1*vol0*moments[0];
+		dest_grid->fields[PSI_GRID_M][gridind] += 0.5*rho0*rho1*vol0*moments[0];
 	}
 }
 
@@ -122,126 +248,6 @@ psi_real psi_orient_tet(psi_rvec* pos, psi_rvec* vel) {
 }
 
 
-
-void psi_voxelize_tet(psi_rvec* pos, psi_rvec* vel, psi_real mass, psi_rvec* rbox, psi_dest_grid* grid) {
-
-	psi_int i, j, ii, jj, gridind;
-	psi_real cm[PSI_NDIM], cv[PSI_NDIM], sxx[PSI_NDIM][PSI_NDIM], sxv[PSI_NDIM][PSI_NDIM], svv[PSI_NDIM][PSI_NDIM];
-	psi_real cwght, dwght;
-	psi_real DX[PSI_NDIM][PSI_NDIM], DV[PSI_NDIM][PSI_NDIM];
-	psi_real moments[10];
-	psi_poly curpoly;
-
-#if PSI_NDIM == 3
-	const static psi_int qinds[3][3] = {{4,5,6},{5,7,8},{6,8,9}};
-#elif PSI_NDIM == 2
-	const static psi_int qinds[2][2] = {{3,4},{4,5}};
-#endif
-
-	// set mass to the volume if volume-weighted
-	// TODO: this swaps vertices if needed. Maybe do a more naive implementation?
-	if(grid->weight == PSI_WEIGHT_VOL) mass = psi_orient_tet(pos, vel); 
-
-	// deformation matrices for the input tet's mass coordinates
-	for(i = 0; i < PSI_NDIM; ++i)
-	for(j = 0; j < PSI_NDIM; ++j) {
-		DX[i][j] = pos[j+1].xyz[i]-pos[0].xyz[i];
-		DV[i][j] = vel[j+1].xyz[i]-vel[0].xyz[i];
-	}
-
-	// initialize the tet as an edge-vertex graph 
-	// and clamp it to the grid
-	psi_init_tet(&curpoly, pos);
-
-	// initialize the voxelization iterator
-	psi_voxels vox;
-	psi_voxels_init(&vox, &curpoly, rbox, grid);
-	while(psi_voxels_next(&vox, moments, &gridind)) {
-	
-		// get moments for this fragment from the mass coordinates 
-		if(grid->fields[PSI_X])
-			for(i = 0; i < PSI_NDIM; ++i) {
-				cm[i] = moments[0]*pos[0].xyz[i];
-				for(j = 0; j < PSI_NDIM; ++j)
-					cm[i] += moments[j+1]*DX[i][j];
-				cm[i] /= moments[0];
-			}
-		if(grid->fields[PSI_V])
-			for(i = 0; i < PSI_NDIM; ++i) {
-				cv[i] = moments[0]*vel[0].xyz[i];
-				for(j = 0; j < PSI_NDIM; ++j)
-					cv[i] += moments[j+1]*DV[i][j];
-				cv[i] /= moments[0];
-			}
-		if(grid->fields[PSI_XX]) {
-			for(i = 0; i < PSI_NDIM; ++i) 
-			for(j = 0; j < PSI_NDIM; ++j)  {
-				sxx[i][j] = moments[0]*(pos[0].xyz[i]-cm[i])*(pos[0].xyz[j]-cm[j]);
-				for(ii = 0; ii < PSI_NDIM; ++ii) {
-					sxx[i][j] += DX[i][ii]*moments[1+ii]*(pos[0].xyz[j]-cm[j]);
-					sxx[i][j] += DX[j][ii]*moments[1+ii]*(pos[0].xyz[i]-cm[i]);
-				}
-				for(ii = 0; ii < PSI_NDIM; ++ii)
-				for(jj = 0; jj < PSI_NDIM; ++jj)
-					sxx[i][j] += DX[i][ii]*DX[j][jj]*moments[qinds[ii][jj]];
-				sxx[i][j] /= moments[0];
-			}
-		}
-		if(grid->fields[PSI_XV]) {
-			for(i = 0; i < PSI_NDIM; ++i) 
-			for(j = 0; j < PSI_NDIM; ++j)  {
-				sxv[i][j] = moments[0]*(pos[0].xyz[i]-cm[i])*(vel[0].xyz[j]-cv[j]);
-				for(ii = 0; ii < PSI_NDIM; ++ii) {
-					sxv[i][j] += DX[i][ii]*moments[1+ii]*(pos[0].xyz[j]-cm[j]);
-					sxv[i][j] += DV[j][ii]*moments[1+ii]*(vel[0].xyz[i]-cv[i]);
-				}
-				for(ii = 0; ii < PSI_NDIM; ++ii)
-				for(jj = 0; jj < PSI_NDIM; ++jj)
-					sxv[i][j] += DX[i][ii]*DV[j][jj]*moments[qinds[ii][jj]];
-				sxv[i][j] /= moments[0];
-			}
-		}
-		if(grid->fields[PSI_VV]) {
-			for(i = 0; i < PSI_NDIM; ++i) 
-			for(j = 0; j < PSI_NDIM; ++j)  {
-				svv[i][j] = moments[0]*(vel[0].xyz[i]-cv[i])*(vel[0].xyz[j]-cv[j]);
-				for(ii = 0; ii < PSI_NDIM; ++ii) {
-					svv[i][j] += DV[i][ii]*moments[1+ii]*(vel[0].xyz[j]-cv[j]);
-					svv[i][j] += DV[j][ii]*moments[1+ii]*(vel[0].xyz[i]-cv[i]);
-				}
-				for(ii = 0; ii < PSI_NDIM; ++ii)
-				for(jj = 0; jj < PSI_NDIM; ++jj)
-					svv[i][j] += DV[i][ii]*DV[j][jj]*moments[qinds[ii][jj]];
-				svv[i][j] /= moments[0];
-			}
-		}
-
-		// update everything online 
-		cwght = mass*moments[0]/(grid->fields[PSI_W][gridind] + mass*moments[0]); 
-		dwght = grid->fields[PSI_W][gridind]/(grid->fields[PSI_W][gridind] + mass*moments[0]); 
-		if(grid->fields[PSI_XX]) for(i = 0; i < PSI_NDIM; ++i) for(j = 0; j < PSI_NDIM; ++j) {
-			grid->fields[PSI_XX][PSI_NDIM*PSI_NDIM*gridind+PSI_NDIM*i+j] = 
-				dwght*grid->fields[PSI_XX][PSI_NDIM*PSI_NDIM*gridind+PSI_NDIM*i+j] + cwght*sxx[i][j] 
-				+ cwght*dwght*(cm[i]-grid->fields[PSI_X][PSI_NDIM*gridind+i])*(cm[j]-grid->fields[PSI_X][PSI_NDIM*gridind+j]);
-		}
-		if(grid->fields[PSI_XV]) for(i = 0; i < PSI_NDIM; ++i) for(j = 0; j < PSI_NDIM; ++j) {
-			grid->fields[PSI_XV][PSI_NDIM*PSI_NDIM*gridind+PSI_NDIM*i+j] = 
-				dwght*grid->fields[PSI_XV][PSI_NDIM*PSI_NDIM*gridind+PSI_NDIM*i+j] + cwght*sxv[i][j] 
-				+ cwght*dwght*(cm[i]-grid->fields[PSI_X][PSI_NDIM*gridind+i])*(cv[j]-grid->fields[PSI_V][PSI_NDIM*gridind+j]);
-		}
-		if(grid->fields[PSI_VV]) for(i = 0; i < PSI_NDIM; ++i) for(j = 0; j < PSI_NDIM; ++j) {
-			grid->fields[PSI_VV][PSI_NDIM*PSI_NDIM*gridind+PSI_NDIM*i+j] = 
-				dwght*grid->fields[PSI_VV][PSI_NDIM*PSI_NDIM*gridind+PSI_NDIM*i+j] + cwght*svv[i][j] 
-				+ cwght*dwght*(cv[i]-grid->fields[PSI_V][PSI_NDIM*gridind+i])*(cv[j]-grid->fields[PSI_V][PSI_NDIM*gridind+j]);
-		}
-		if(grid->fields[PSI_X]) for(i = 0; i < PSI_NDIM; ++i) 
-			grid->fields[PSI_X][PSI_NDIM*gridind+i] += cwght*(cm[i]-grid->fields[PSI_X][PSI_NDIM*gridind+i]);
-		if(grid->fields[PSI_V]) for(i = 0; i < PSI_NDIM; ++i) 
-			grid->fields[PSI_V][PSI_NDIM*gridind+i] += cwght*(cv[i]-grid->fields[PSI_V][PSI_NDIM*gridind+i]);
-
-		if(grid->fields[PSI_W]) grid->fields[PSI_W][gridind] += mass*moments[0];
-	}
-}
 
 
 void psi_point_sample_tet(psi_rvec* pos, psi_rvec* vel, psi_real mass, psi_rvec* rbox, psi_dest_grid* grid) {
@@ -288,7 +294,7 @@ void psi_point_sample_tet(psi_rvec* pos, psi_rvec* vel, psi_real mass, psi_rvec*
 			if(bcoords[i] < 0.0) goto next_sample;
 
 		gridind = grid->n[1]*grid->n[2]*ind.i + grid->n[2]*ind.j + ind.k;
-		if(grid->fields[PSI_W]) grid->fields[PSI_W][gridind] += dv*mass/fabs(vol);
+		if(grid->fields[PSI_GRID_M]) grid->fields[PSI_GRID_M][gridind] += dv*mass/fabs(vol);
 
 		// TODO: velocity stuff with BC coordinates 
 	
@@ -311,7 +317,7 @@ void psi_point_sample_tet(psi_rvec* pos, psi_rvec* vel, psi_real mass, psi_rvec*
 			if(bcoords[i] < 0.0) goto next_sample;
 
 		gridind = grid->n[1]*ind.i + ind.j;
-		if(grid->fields[PSI_W]) grid->fields[PSI_W][gridind] += dv*mass/fabs(vol);
+		if(grid->fields[PSI_GRID_M]) grid->fields[PSI_GRID_M][gridind] += dv*mass/fabs(vol);
 
 		// TODO: velocity stuff with BC coordinates 
 	
@@ -321,6 +327,7 @@ void psi_point_sample_tet(psi_rvec* pos, psi_rvec* vel, psi_real mass, psi_rvec*
 #endif
 }
 
+#endif
 
 psi_real psi_barycentric(psi_rvec* pos, psi_rvec samppos, psi_real* bcoords) {
 
@@ -794,7 +801,7 @@ void psi_init_tet(psi_poly* poly, psi_rvec* pos) {
 	for(v = 0; v < PSI_NDIM+1; ++v) poly->verts[v].pos = pos[v];
 }
 
-void psi_voxels_init(psi_voxels* vox, psi_poly* poly, psi_rvec* rbox, psi_dest_grid* grid) {
+void psi_voxels_init(psi_voxels* vox, psi_poly* poly, psi_rvec* rbox, psi_grid* grid) {
 
 	psi_int i, cliplo, cliphi, nplanes;
 	psi_real cmin, cmax;
@@ -808,22 +815,22 @@ void psi_voxels_init(psi_voxels* vox, psi_poly* poly, psi_rvec* rbox, psi_dest_g
 		cliplo = 0; cliphi = 0;
 		cmin = rbox[0].xyz[i];
 		cmax = rbox[1].xyz[i];
-		if(grid->window[0][i] > cmin) {
-			cmin = grid->window[0][i];
+		if(grid->window[0].xyz[i] > cmin) {
+			cmin = grid->window[0].xyz[i];
 			cliplo = 1;
 		}	
-		if(grid->periodic && grid->box[0][i] > cmin) {
-			cmin = grid->box[0][i];
-			cliplo = 1;
-		}
-		if(grid->window[1][i] < cmax) {
-			cmax = grid->window[1][i];
+		//if(grid->periodic && grid->box[0][i] > cmin) {
+			//cmin = grid->box[0][i];
+			//cliplo = 1;
+		//}
+		if(grid->window[1].xyz[i] < cmax) {
+			cmax = grid->window[1].xyz[i];
 			cliphi = 1;
 		}	
-		if(grid->periodic && grid->box[1][i] < cmax) {
-			cmax = grid->box[1][i];
-			cliphi = 1;
-		}
+		//if(grid->periodic && grid->box[1][i] < cmax) {
+			//cmax = grid->box[1][i];
+			//cliphi = 1;
+		//}
 		if(cliplo) {
 			planes[nplanes].n.xyz[i] = 1.0;
 			planes[nplanes].d = -cmin;
@@ -834,10 +841,10 @@ void psi_voxels_init(psi_voxels* vox, psi_poly* poly, psi_rvec* rbox, psi_dest_g
 			planes[nplanes].d = cmax;
 			nplanes++;
 		}
-		poly->ibox[0].ijk[i] = floor((cmin-grid->window[0][i])/grid->d[i]);
-		poly->ibox[1].ijk[i] = ceil((cmax-grid->window[0][i])/grid->d[i]);
+		poly->ibox[0].ijk[i] = floor((cmin-grid->window[0].xyz[i])/grid->d.xyz[i]);
+		poly->ibox[1].ijk[i] = ceil((cmax-grid->window[0].xyz[i])/grid->d.xyz[i]);
 		if(poly->ibox[0].ijk[i] < 0) poly->ibox[0].ijk[i] = 0;
-		if(poly->ibox[1].ijk[i] > grid->n[i]) poly->ibox[1].ijk[i] = grid->n[i];
+		if(poly->ibox[1].ijk[i] > grid->n.ijk[i]) poly->ibox[1].ijk[i] = grid->n.ijk[i];
 	}
 	psi_clip(poly, planes, nplanes);
 
@@ -855,7 +862,7 @@ psi_int psi_voxels_next(psi_voxels* vox, psi_real* moments, psi_int* gridind) {
 	// pointers for easier acces
 	psi_poly* stack = vox->stack;
 	psi_int* nstack = &vox->nstack;
-	psi_dest_grid* grid = vox->grid;
+	psi_grid* grid = vox->grid;
 
 	while(*nstack > 0) {
 		curpoly = stack[--*nstack];
@@ -871,18 +878,18 @@ psi_int psi_voxels_next(psi_voxels* vox, psi_real* moments, psi_int* gridind) {
 		if(dmax == 1) {
 			// if all three axes are only one voxel long, reduce the single voxel to the dest grid
 			// reduce and add it to the target grid if its mass is nonzero
-			psi_reduce(&curpoly, moments, grid->polyorder, grid->weight);
+			psi_reduce(&curpoly, moments, 0, 0); /// TODO: higher order not turned on!!!!! 
 			if(moments[0] <= 0.0) continue;
 #if PSI_NDIM == 3
-			*gridind = grid->n[1]*grid->n[2]*curpoly.ibox[0].i + grid->n[2]*curpoly.ibox[0].j + curpoly.ibox[0].k;
+			*gridind = grid->n.ijk[1]*grid->n.ijk[2]*curpoly.ibox[0].i + grid->n.ijk[2]*curpoly.ibox[0].j + curpoly.ibox[0].k;
 #elif PSI_NDIM == 2
-			*gridind = grid->n[1]*curpoly.ibox[0].i + curpoly.ibox[0].j;
+			*gridind = grid->n.ijk[1]*curpoly.ibox[0].i + curpoly.ibox[0].j;
 #endif
 			return 1;
 		}
 
 		// split the poly and push children to the stack
-		psi_split_coord(&curpoly, &stack[*nstack], grid->d[spax]*(curpoly.ibox[0].ijk[spax]+dmax/2)+grid->window[0][spax], spax);
+		psi_split_coord(&curpoly, &stack[*nstack], grid->d.xyz[spax]*(curpoly.ibox[0].ijk[spax]+dmax/2)+grid->window[0].xyz[spax], spax);
 		memcpy(stack[*nstack].ibox, curpoly.ibox, 2*sizeof(psi_dvec));
 		stack[*nstack].ibox[1].ijk[spax] -= dmax-dmax/2; 
 		memcpy(stack[*nstack+1].ibox, curpoly.ibox, 2*sizeof(psi_dvec));
@@ -891,7 +898,6 @@ psi_int psi_voxels_next(psi_voxels* vox, psi_real* moments, psi_int* gridind) {
 	}
 	return 0;
 }
-#endif
 
 // gives the solid angle of the triangular cone
 psi_real psi_omega3(psi_rvec v1, psi_rvec v2, psi_rvec v3) {

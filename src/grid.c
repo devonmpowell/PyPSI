@@ -12,63 +12,70 @@ psi_int psi_grid_get_cell_geometry(psi_grid* grid, psi_dvec grind, psi_int step,
 	psi_int order_, nside_, npix_;
 	psi_real dx[2], x0[2], xc, yc, dc, d;
 
-	if(strcmp(grid->type, "cart3d") == 0) {
-		printf("cart3d vertices for cell %d %d %d\n", grind.i, grind.j, grind.k);
+	switch(grid->type) {
 	
-		// back out the grid index
-		// compute cellel boundary and center
-		//ii = cell/grbp->idim[1]; // row-major order
-		//jj = cell%grbp->idim[1]; // switch the / and % to change to column-major
-		//dx[0] = grbp->fdim[0]/grbp->idim[0];
-		//dx[1] = grbp->fdim[1]/grbp->idim[1];
-		//x0[0] = -0.5*grbp->fdim[0];
-		//x0[1] = -0.5*grbp->fdim[1];
-		//memset(boundary, 0, 12*sizeof(real));
-		//memset(center, 0, 3*sizeof(real));
+		case PSI_GRID_CART:
 
-		//// TODO: z-coordinates
-		//boundary[3*0+0] = x0[0]+(ii+0)*dx[0];
-		//boundary[3*0+1] = x0[1]+(jj+0)*dx[1];
-		//boundary[3*1+0] = x0[0]+(ii+1)*dx[0];
-		//boundary[3*1+1] = x0[1]+(jj+0)*dx[1];
-		//boundary[3*2+0] = x0[0]+(ii+1)*dx[0];
-		//boundary[3*2+1] = x0[1]+(jj+1)*dx[1];
-		//boundary[3*3+0] = x0[0]+(ii+0)*dx[0];
-		//boundary[3*3+1] = x0[1]+(jj+1)*dx[1];
+			printf("cart3d vertices for cell %d %d %d\n", grind.i, grind.j, grind.k);
+		
+			// back out the grid index
+			// compute cellel boundary and center
+			//ii = cell/grbp->idim[1]; // row-major order
+			//jj = cell%grbp->idim[1]; // switch the / and % to change to column-major
+			//dx[0] = grbp->fdim[0]/grbp->idim[0];
+			//dx[1] = grbp->fdim[1]/grbp->idim[1];
+			//x0[0] = -0.5*grbp->fdim[0];
+			//x0[1] = -0.5*grbp->fdim[1];
+			//memset(boundary, 0, 12*sizeof(real));
+			//memset(center, 0, 3*sizeof(real));
+	
+			//// TODO: z-coordinates
+			//boundary[3*0+0] = x0[0]+(ii+0)*dx[0];
+			//boundary[3*0+1] = x0[1]+(jj+0)*dx[1];
+			//boundary[3*1+0] = x0[0]+(ii+1)*dx[0];
+			//boundary[3*1+1] = x0[1]+(jj+0)*dx[1];
+			//boundary[3*2+0] = x0[0]+(ii+1)*dx[0];
+			//boundary[3*2+1] = x0[1]+(jj+1)*dx[1];
+			//boundary[3*3+0] = x0[0]+(ii+0)*dx[0];
+			//boundary[3*3+1] = x0[1]+(jj+1)*dx[1];
+	
+			// average the center vertex for convenience
+			//center[0] = 0.25*(boundary[3*0+0]+boundary[3*1+0]+boundary[3*2+0]+boundary[3*3+0]);
+			//center[1] = 0.25*(boundary[3*0+1]+boundary[3*1+1]+boundary[3*2+1]+boundary[3*3+1]);
+			//center[2] = 0.25*(boundary[3*0+2]+boundary[3*1+2]+boundary[3*2+2]+boundary[3*3+2]);
+			break;
 
-		// average the center vertex for convenience
-		//center[0] = 0.25*(boundary[3*0+0]+boundary[3*1+0]+boundary[3*2+0]+boundary[3*3+0]);
-		//center[1] = 0.25*(boundary[3*0+1]+boundary[3*1+1]+boundary[3*2+1]+boundary[3*3+1]);
-		//center[2] = 0.25*(boundary[3*0+2]+boundary[3*1+2]+boundary[3*2+2]+boundary[3*3+2]);
+		case PSI_GRID_HPRING:
+
+	  		order_  = grid->n.i; 
+	  		nside_  = grid->n.j;
+	  		npix_  = grid->n.k;
+			if(grind.i >= npix_) return 0;
+			ring2xyf(order_, grind.i, &ix, &iy, &face); // only RING ordering for now
+			dc = 0.5 / nside_;
+			xc = (ix + 0.5)/nside_, yc = (iy + 0.5)/nside_;
+			d = 1.0/(step*nside_);
+			xyf2loc(xc, yc, face, (psi_real*)center);
+			for(i=0, j=step, k=2*step, m=3*step; i < step; ++i, ++j, ++k, ++m) {
+			    xyf2loc(xc+dc-i*d, yc+dc, face, (psi_real*)&boundary[i]);
+			    xyf2loc(xc-dc, yc+dc-i*d, face, (psi_real*)&boundary[j]);
+			    xyf2loc(xc-dc+i*d, yc-dc, face, (psi_real*)&boundary[k]);
+			    xyf2loc(xc+dc, yc-dc+i*d, face, (psi_real*)&boundary[m]);
+			}
+			*vol = 0.0;
+			for(i = 0; i < step*4; ++i) {
+				*vol += psi_omega3(boundary[i], boundary[(i+1)%(step*4)], *center);
+			}
+
+			break;
 
 
-
-
+		default:
+			return 0;
 	}
-	else if(strcmp(grid->type, "hpring") == 0) {
-  		order_  = grid->n.i; 
-  		nside_  = grid->n.j;
-  		npix_  = grid->n.k;
-		if(grind.i >= npix_) return 0;
-		ring2xyf(order_, grind.i, &ix, &iy, &face); // only RING ordering for now
-		dc = 0.5 / nside_;
-		xc = (ix + 0.5)/nside_, yc = (iy + 0.5)/nside_;
-		d = 1.0/(step*nside_);
-		xyf2loc(xc, yc, face, (psi_real*)center);
-		for(i=0, j=step, k=2*step, m=3*step; i < step; ++i, ++j, ++k, ++m) {
-		    xyf2loc(xc+dc-i*d, yc+dc, face, (psi_real*)&boundary[i]);
-		    xyf2loc(xc-dc, yc+dc-i*d, face, (psi_real*)&boundary[j]);
-		    xyf2loc(xc-dc+i*d, yc-dc, face, (psi_real*)&boundary[k]);
-		    xyf2loc(xc+dc, yc-dc+i*d, face, (psi_real*)&boundary[m]);
-		}
-		*vol = 0.0;
-		for(i = 0; i < step*4; ++i) {
-			*vol += psi_omega3(boundary[i], boundary[(i+1)%(step*4)], *center);
-		}
-	}
-	else {
-		return 0;
-	}
+
+
+
 
 	return 1;
 }

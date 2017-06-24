@@ -2,6 +2,7 @@
 #define _GEOMETRY_H_
 
 #include "psi.h"
+#include "grid.h"
 
 // numeric constants
 #define PI 3.14159265359

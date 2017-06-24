@@ -31,6 +31,12 @@
 #include <string.h>
 #include <math.h>
 
+/// TODO: this is hacky !!
+// Make dimensionality dynamic!
+#define PSI_NDIM 3
+
+
+
 // primitive types 
 // with floating-point precision as an option
 typedef int16_t psi_short;
@@ -61,6 +67,7 @@ typedef union {
 #define PSI_SAMPLING_CIC 2
 #define PSI_SAMPLING_NGP 2
 
+//void psi_voxels(psi_grid* grid, psi_mesh* mesh);
 
 
 // user-exposed functions taking plain arrays 
