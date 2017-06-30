@@ -29,10 +29,10 @@ void psi_mesh_destroy(psi_mesh* mesh);
 
 
 // mesh loaders (more to be added)
+
 #define PSI_MESH_GADGET2 0
 int peek_gadget2(psi_mesh* mesh, const char* filename);
 int load_gadget2(psi_mesh* mesh, const char* filename);
-
 
 
 

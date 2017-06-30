@@ -128,6 +128,7 @@ static void PSI_Grid2grid(Grid* grid, psi_grid* cgrid) {
 
 static int Mesh_init(Mesh *self, PyObject *args, PyObject *kwds) {
 
+	psi_int ax;
 	psi_mesh cmesh;
 	char* cloader, *cfile;
 	npy_intp npdims[6];
@@ -180,7 +181,74 @@ static int Mesh_init(Mesh *self, PyObject *args, PyObject *kwds) {
 			return -1;
 
 	}
+	else if(strcmp(cloader, "hacky_test") == 0) {
+
+		psi_printf("Using the hacked test vertices.\n");
+
+		// set up the cmesh...
+		cmesh.npart = 4; 
+		cmesh.nelem = 1; 
+		cmesh.periodic = 1;
+		cmesh.elemtype = PSI_MESH_SIMPLEX;
+		cmesh.dim = 3; 
+		for(ax = 0; ax < 3; ++ax) {
+			cmesh.box[0].xyz[ax] = 0.0;
+			cmesh.box[1].xyz[ax] = 40.0; 
+		}
+
+		// wrap the cmesh data in a cubical Numpy array
+		npdims[0] = cmesh.npart;
+		npdims[1] = cmesh.dim;
+		self->pos = PyArray_SimpleNew(2, npdims, NPY_DOUBLE);
+		self->vel = PyArray_SimpleNew(2, npdims, NPY_DOUBLE);
+		self->mass = PyArray_SimpleNew(1, npdims, NPY_DOUBLE);
+		npdims[0] = cmesh.nelem;
+		npdims[1] = psi_verts_per_elem(cmesh.elemtype); 
+		self->connectivity = PyArray_SimpleNew(2, npdims, NPY_INT32);
+		if(!self->pos || !self->vel || !self->connectivity) {
+			psi_printf("new array fail!\n");
+			return -1;
+		} 
+		if(cmesh.periodic) {
+			self->boxmin = Py_BuildValue("(ddd)", cmesh.box[0].x, cmesh.box[0].y, cmesh.box[0].z);
+			self->boxmax = Py_BuildValue("(ddd)", cmesh.box[1].x, cmesh.box[1].y, cmesh.box[1].z);
+		}
+		else {
+			self->boxmin = MAKE_PY_NONE;
+			self->boxmax = MAKE_PY_NONE;
+		}
+
+		cmesh.pos = PyArray_DATA((PyArrayObject*)self->pos);
+		cmesh.vel = PyArray_DATA((PyArrayObject*)self->vel);
+		cmesh.mass = PyArray_DATA((PyArrayObject*)self->mass);
+		cmesh.connectivity = PyArray_DATA((PyArrayObject*)self->connectivity);
+	
+		//  fill in the vertex pos, mass, vel...
+		cmesh.mass[0] = 1.0;
+		cmesh.mass[1] = 1.0;
+		cmesh.mass[2] = 1.0;
+		cmesh.mass[3] = 1.0;
+		cmesh.pos[0].x = 17.0-40;
+		cmesh.pos[0].y = 17.0-40;
+		cmesh.pos[0].z = 17.0-40;
+		cmesh.pos[1].x = 29.0-40;
+		cmesh.pos[1].y = 17.0-40;
+		cmesh.pos[1].z = 17.0-40;
+		cmesh.pos[2].x = 17.0-40;
+		cmesh.pos[2].y = 29.0-40;
+		cmesh.pos[2].z = 17.0-40;
+		cmesh.pos[3].x = 17.0-40;
+		cmesh.pos[3].y = 17.0-40;
+		cmesh.pos[3].z = 29.0-40;
+		cmesh.connectivity[0] = 0;
+		cmesh.connectivity[1] = 1;
+		cmesh.connectivity[2] = 2;
+		cmesh.connectivity[3] = 3;
+
+	}
+
 	else {
+		psi_printf("Bad loader: %s\n", cloader);
 		return -1;
 	} 
 
@@ -590,6 +658,39 @@ static PyObject *PSI_voxels(PyObject *self, PyObject *args, PyObject* kwds) {
    Py_RETURN_NONE;
 }
 
+static PyObject *PSI_phi(PyObject *self, PyObject *args, PyObject* kwds) {
+
+	psi_grid cgrid;
+	Grid* grid;	
+
+	static char *kwlist[] = {"grid", NULL};
+
+	if(!PyArg_ParseTupleAndKeywords(args, kwds, "O", kwlist, &grid))
+		return MAKE_PY_NONE;
+
+
+	PSI_Grid2grid(grid, &cgrid);
+	if(cgrid.type != PSI_GRID_CART) 
+		Py_RETURN_NONE;
+
+	psi_int ax;
+	npy_intp npdims[3];
+	for(ax = 0; ax < 3; ++ax)
+		npdims[ax] = cgrid.n.ijk[ax];
+
+
+
+	// the return array
+	PyObject* retar = PyArray_ZEROS(cgrid.dim, npdims, NPY_DOUBLE, 0);
+
+	printf("Doing the FFT\n");
+
+	psi_do_phi(&cgrid, PyArray_DATA(retar));
+
+	return retar;
+}
+
+
 /////////////////////////////////////////////////////////////
 //     PSI module init 
 /////////////////////////////////////////////////////////////
@@ -605,6 +706,7 @@ static PyObject *PSI_voxels(PyObject *self, PyObject *args, PyObject* kwds) {
 static PyMethodDef module_methods[] = {
    	{"skymap", (PyCFunction)PSI_skymap, METH_KEYWORDS, "Makes a skymap"},
    	{"voxels", (PyCFunction)PSI_voxels, METH_KEYWORDS, "Voxelizes"},
+   	{"phi", (PyCFunction)PSI_phi, METH_KEYWORDS, "phi"},
     {NULL, NULL, 0, NULL}
 };
 

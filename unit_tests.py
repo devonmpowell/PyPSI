@@ -10,36 +10,56 @@ import healpy as hp
 # test basic PSIMOD functionality 
 class PSIMODTests(TestCase):
 
-    def test_skymap(self):
+    def test_phi(self):
 
+        # loads, voxelizes, and computes the potential field
         print
         mesh = psi.Mesh(filename='data/snapshot_010', loader='gadget2')
+        grid = psi.Grid(type='cart', n=(64,64,64), window=(mesh.boxmin, mesh.boxmax)) 
+        psi.voxels(grid=grid, mesh=mesh)
+        phi = psi.phi(grid)
+        plt.imshow((phi[:,:,32]))
+        plt.show()
+
+    def test_skymap(self):
+
+        pass
+
+        print
+        #mesh = psi.Mesh(filename='data/snapshot_000', loader='gadget2')
+        #mesh = psi.Mesh(filename='', loader='hacky_test')
+        mesh = psi.Mesh(filename='data/box128_000', loader='gadget2')
         #print mesh.pos[mesh.connectivity][12475]
 
-        grid = psi.Grid(type='hpring', n=8) 
+        grid = psi.Grid(type='hpring', n=128) 
 
-        psi.skymap(grid=grid, mesh=mesh, bstep=1)
+        psi.skymap(grid=grid, mesh=mesh, bstep=2)
 
-        print "mass = ", np.sum(grid.fields["m"])
-        print "mass error = ", 1.0-np.sum(grid.fields["m"])
+        err = 1.0-np.sum(grid.fields["m"])
+        print "mass = ", np.sum(grid.fields["m"]), 'err =', err
+
+        #grid.fields["m"].tofile('data/scratch.np')
         
         # show the pixel area plot
-        hp.mollview(np.log10(grid.fields['m']), title='Mass map')
+        hp.mollview(np.log10(grid.fields['m']), title='Mass map, err = %.5e'%err)
         plt.show()
 
     def test_voxels(self):
 
+        pass
+
         print
         mesh = psi.Mesh(filename='data/snapshot_010', loader='gadget2')
+        #mesh = psi.Mesh(filename='data/box128_010', loader='gadget2')
         #print mesh.pos[mesh.connectivity][12475]
 
-        grid = psi.Grid(type='cart', n=(56,56,56), window=(mesh.boxmin, mesh.boxmax)) 
+        grid = psi.Grid(type='cart', n=(64,64,64), window=(mesh.boxmin, mesh.boxmax)) 
         #grid = psi.Grid(type='cart', n=(64,64,64), window=((-5,-5,-5),(45,45,45))) 
 
         psi.voxels(grid=grid, mesh=mesh)
 
-        plt.imshow(np.log10(grid.fields["m"][:,:,32]))
-        plt.show()
+        #plt.imshow(np.log10(grid.fields["m"][:,:,32]))
+        #plt.show()
 
         print "mass error = ", 1.0-np.sum(grid.fields["m"])
         

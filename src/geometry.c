@@ -490,7 +490,8 @@ void psi_clip(psi_poly* poly, psi_plane* planes, psi_int nplanes) {
 #endif
 		}
 
-		if(*nverts >= POLYSZ) printf("WARNING: Overflowed vertex buffer. nverts = %d >= %d\n", *nverts, POLYSZ);
+		if(*nverts >= POLYSZ) 
+			psi_printf("WARNING: Overflowed vertex buffer. nverts = %d >= %d\n", *nverts, POLYSZ);
 
 		// go through and compress the vertex list, removing clipped verts
 		// and re-indexing accordingly (reusing `clipped` to re-index everything)
@@ -679,7 +680,8 @@ void psi_split_coord(psi_poly* inpoly, psi_poly* outpolys, psi_real coord, psi_i
 #endif
 	}
 
-	if(*nverts >= POLYSZ) printf("WARNING: Overflowed vertex buffer. nverts = %d >= %d\n", *nverts, POLYSZ);
+	if(*nverts >= POLYSZ) 
+		psi_printf("WARNING: Overflowed vertex buffer. nverts = %d >= %d\n", *nverts, POLYSZ);
 
 	// copy and compress vertices into their new buffers
 	// TODO: do this beforehand, since we have two buffers ready
@@ -831,18 +833,10 @@ void psi_voxels_init(psi_voxels* vox, psi_poly* poly, psi_rvec* rbox, psi_grid* 
 			cmin = grid->window[0].xyz[i];
 			cliplo = 1;
 		}	
-		//if(grid->periodic && grid->box[0][i] > cmin) {
-			//cmin = grid->box[0][i];
-			//cliplo = 1;
-		//}
 		if(grid->window[1].xyz[i] < cmax) {
 			cmax = grid->window[1].xyz[i];
 			cliphi = 1;
 		}	
-		//if(grid->periodic && grid->box[1][i] < cmax) {
-			//cmax = grid->box[1][i];
-			//cliphi = 1;
-		//}
 		if(cliplo) {
 			planes[nplanes].n.xyz[i] = 1.0;
 			planes[nplanes].d = -cmin;

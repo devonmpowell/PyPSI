@@ -9,6 +9,7 @@ void psi_skymap(psi_grid* grid, psi_mesh* mesh, psi_int bstep) {
 	psi_dvec grind;
 	psi_real vol;
 	psi_real moments[10];
+	psi_real vertweights[4];
 	psi_rvec corners[64], center, brbox[2];
 	psi_rvec gpos[mesh->dim+1], grbox[2];
 	psi_int vpere = mesh->elemtype;
@@ -49,39 +50,38 @@ void psi_skymap(psi_grid* grid, psi_mesh* mesh, psi_int bstep) {
 		// insert each element into the tree
 		psi_rtree_insert(&rtree, trbox, e);
 	}
-	//psi_rtree_print(stdout, &rtree);
-	psi_tet_buffer_init(&tetbuf, 1000.0, 0);
+	//psi_tet_buffer_init(&tetbuf, 1000.0, 0);
+	psi_tet_buffer_init(&tetbuf, 1.0, 4);
 
 	printf("Total mass loaded = %.5e\n", mtot);
 
-				/// TODO: test
-				mtot = 0.0;
-				for(ax = 0; ax < 3; ++ax) {
-					brbox[0].xyz[ax] = -40.0;
-					brbox[1].xyz[ax] = 40.0;
-				}
-				psi_rtree_query_init(&qry, &rtree, brbox);
-				while(psi_rtree_query_next(&qry, &e)) {
-
-					tmass = 0.0;
-					for(v = 0; v < vpere; ++v) {
-						tind = mesh->connectivity[e*vpere+v];
-						tpos[v] = mesh->pos[tind];
-						for(ax = 0; ax < 3; ++ax)
-							tpos[v].xyz[ax] -= obspos.xyz[ax];
-						tvel[v] = mesh->vel[tind];
-						tmass += (1.0/vpere)*mesh->mass[tind]; // TODO: hack
-					}
-
-					mtot += tmass;
-
-
-
-
-				}
+	/// TODO: test
+	mtot = 0.0;
+	for(ax = 0; ax < 3; ++ax) {
+		brbox[0].xyz[ax] = mesh->box[0].xyz[ax] - obspos.xyz[ax]; 
+		brbox[1].xyz[ax] = mesh->box[1].xyz[ax] - obspos.xyz[ax]; 
+	}
+	psi_rtree_query_init(&qry, &rtree, brbox);
+	while(psi_rtree_query_next(&qry, &e)) {
+		tmass = 0.0;
+		for(v = 0; v < vpere; ++v) {
+			tind = mesh->connectivity[e*vpere+v];
+			tmass += (1.0/vpere)*mesh->mass[tind]; 
+		}
+		mtot += tmass;
+	}
 	printf("Total mass queried = %.5e\n", mtot);
 
+	/// RTREE test
+	// see whether all bound boxes completely contain their children
+	//psi_rtree_print(stdout, &rtree);
+
+	psi_real omtot = 0.0;
 	
+	psi_int* elemmarks = psi_malloc(mesh->nelem*sizeof(psi_int));
+	memset(elemmarks, 0, mesh->nelem*sizeof(psi_int));
+
+	mtot = 0.0;
 
 	// for every pixel in the image...
 	memset(grid->fields[0], 0, grid->n.k*sizeof(psi_real));
@@ -90,8 +90,11 @@ void psi_skymap(psi_grid* grid, psi_mesh* mesh, psi_int bstep) {
 		// get the four corner vectors and the center
 		// this depends on the pixelization scheme given by grbp
 		grind.i = p;
-		if(!psi_grid_get_cell_geometry(grid, grind, bstep, corners, &center, &vol)) 
+		if(!psi_grid_get_cell_geometry(grid, grind, bstep, corners, &center, &vol)) {
+		
+			printf("Bad cell geometry!\n");
 			continue;
+		} 
 
 		// divide the pixel into four triangular beams,
 		// all four share the center point 
@@ -105,14 +108,15 @@ void psi_skymap(psi_grid* grid, psi_mesh* mesh, psi_int bstep) {
 			}
 	
 			// TODO: rotate/transform/boost the beam position to the source
-	
-			// trace the beam, then accumulate the
-			// resulting flux into the pixel
-			//trace_beam(grbp, &beam);
+			psi_real domega = psi_omega3(rawverts[0], rawverts[1], rawverts[2]);
+			if(domega <= 0.0)
+				printf("Bad domega!!!!\n");
 
-			psi_real rmin = 0.01;
-			psi_real rmax = 200.0;
-			psi_real rstep = 0.5;
+			omtot += domega;
+	
+			psi_real rmin = 15.0;
+			psi_real rmax = 15.0 + 0.001;
+			psi_real rstep = .001001; 
 			psi_real rold = rmin;
 			psi_real rnew;
 			while(rold < rmax) {
@@ -156,6 +160,9 @@ void psi_skymap(psi_grid* grid, psi_mesh* mesh, psi_int bstep) {
 				psi_rtree_query_init(&qry, &rtree, brbox);
 				while(psi_rtree_query_next(&qry, &e)) {
 
+					psi_real ttmass = 0.0;
+					elemmarks[e] = 1;
+
 					// a local copy of the element, in case it's modified
 					// make it periodic, get its bounding box, and check it against the grid
 					tmass = 0.0;
@@ -172,39 +179,58 @@ void psi_skymap(psi_grid* grid, psi_mesh* mesh, psi_int bstep) {
 					// loop over each tet in the buffer
 					psi_tet_buffer_refine(&tetbuf, tpos, tvel, tmass, mesh->elemtype);
 					for(t = 0; t < tetbuf.num; ++t) {
+
+						ttmass += tetbuf.mass[t]; 
 			
 						// copy the position to the ghost array and compute its aabb
 						memcpy(gpos, &tetbuf.pos[(mesh->dim+1)*t], (mesh->dim+1)*sizeof(psi_rvec));
 						//psi_aabb(gpos, mesh->dim+1,grbox);
 						// TODO: check the boxes before clipping....
 						psi_clip_reduce_tet(gpos, beamfaces, 5, moments);
-						if(moments[0] <= 0.0) continue;
+						if(moments[0] <= 0.0) {
+							if(moments[0] < 0.0)
+								psi_printf("Moments < 0 ! %.5e\n", moments[0]);
+							continue;
+						} 
 
-						grid->fields[0][p] += tetbuf.mass[t]*moments[0]; 
 
-						//printf("clip and reduce; mass = %.5e\n", moments[0]);
-			
-						// make ghosts and sample tets to the grid
-						//psi_make_ghosts(gpos, grbox, &nghosts, (mesh->dim+1), grid->window, mesh);
-						//for(g = 0; g < nghosts; ++g) {
-							//psi_rvec* curtet = &gpos[(mesh->dim+1)*g];
-							//if(grid->sampling == PSI_SAMPLING_VOLUME)
-								//psi_voxelize_tet(gpos, &tetbuf.vel[(mesh->dim+1)*t], tetbuf.mass[t], grbox);
-							//else if(grid->sampling == PSI_SAMPLING_POINT)
-								//psi_point_sample_tet(&gpos[(mesh->dim+1)*g], &tetbuf.vel[(mesh->dim+1)*t], tetbuf.mass[t], &grbox[2*g], grid);
-						//}
+						// set up the vertex weights,
+						// depending on the specified weight scheme
+						for(v = 0; v < 4; ++v) {
+
+							// mass-weighted for debugging
+							vertweights[v] = tetbuf.mass[t]; 
+
+							// inverse r^2, gpos is already relative to the observer position
+							//vertweights[v] = tetbuf.mass[t]/(gpos[v].x*gpos[v].x+gpos[v].y*gpos[v].y+gpos[v].z*gpos[v].z); 
+						}
+
+						// subtract. Now moments[0->3] contain barycentric moments,
+						// properly weighted wrt the original tet vertices
+						// add the mass to the grid, linearly interpolating the vertex weights 
+						moments[0] -= (moments[1]+moments[2]+moments[3]); 
+						for(v = 0; v < 4; ++v) {
+							grid->fields[0][p] += vertweights[v]*moments[v]; 
+							mtot += vertweights[v]*moments[v]; 
+						}
 					}
-
-				
 				}
-			
 				rold = rnew;
 			}
-
 		}
 	}
 
 	psi_rtree_destroy(&rtree);
+
+	printf("Total mass mapped = %.5e\n", mtot);
+	printf("Omtot/4pi-1 = %.5e\n", omtot/(FOUR_PI)-1.0);
+
+	// make sure all elements were used...
+	//for(e = 0; e < mesh->nelem; ++e) {
+		//if(elemmarks[e]) continue;
+		//printf(" Element %d was never used !!!---!!!\n", e);
+	//}
+	psi_free(elemmarks);
 
 #if 0
 		// refine elements into the tet buffer 

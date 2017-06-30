@@ -16,28 +16,6 @@ void psi_rtree_insert(psi_rtree* rtree, psi_rvec* rbox, psi_int data) {
 	psi_rtree_insert_fancy(insert_data, 0, 0, rtree);
 }
 
-// implementation 
-//void psi_rtree_load(psi_rtree* rtree, psi_mesh* mesh) {
-
-	//psi_int e, g, nghosts, vpere;
-	//psi_rtree_data insert_data;
-	//psi_rvec *newpos, *newvel;
-	//psi_real* newmass;
-	
-	//// if we don't own the data, clear the rtree and wrap the data
-	//rtree->root = 0; 
-	//rtree->allnodes[rtree->root].nchildren = 0;
-	//rtree->nnodes = 1;
-	//rtree->depth = 0;
-	//vpere = mesh->elemtype; 
-	//for(e = 0; e < mesh->nelem; ++e) {
-		//insert_data.data = e;
-		//// TODO: need a nonperiodic version of this!
-		//psi_aabb_periodic(&pos[vpere*e], order, insert_data.rbox, grid);
-		//psi_rtree_insert_fancy(insert_data, 0, 0, rtree);
-	//}
-//}
-
 void psi_rtree_query_init(psi_rtree_query* qry, psi_rtree* rtree, psi_rvec* qbox) {
 	qry->rtree = rtree;
 	qry->rbox = qbox;

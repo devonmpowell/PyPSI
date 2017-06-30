@@ -2,8 +2,9 @@ from distutils.core import setup, Extension
 import numpy.distutils.misc_util
 
 c_ext = Extension("PSI", ["src/PSI.c", "src/mesh.c","src/grid.c", "src/geometry.c", "src/skymap.c",
-    "src/psi.c","src/refine.c", "src/rtree.c"],
-    define_macros=[('PYMODULE', None), ('NPY_NO_DEPRECATED_API', 'NPY_1_7_API_VERSION')],
+    "src/psi.c","src/refine.c", "src/rtree.c", "src/fft.c"],
+    define_macros=[('PYMODULE', None), ('NPY_NO_DEPRECATED_API', 'NPY_1_7_API_VERSION'),
+        ('HAVE_FFTW', None)],
         )
 
 setup(

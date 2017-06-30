@@ -81,8 +81,12 @@ void psi_voxels(psi_grid* grid, psi_mesh* mesh) {
 					//psi_point_sample_tet(&gpos[(mesh->dim+1)*g], &tetbuf.vel[(mesh->dim+1)*t], tetbuf.mass[t], &grbox[2*g], grid);
 			}
 		}
+		if(e%512==0)
+			psi_printf("\rElement %d of %d, %.1f %", e, mesh->nelem, (100.0*e)/mesh->nelem);
 	}
 	psi_tet_buffer_destroy(&tetbuf);
+
+	psi_printf("\n");
 }
 
 #if 0
