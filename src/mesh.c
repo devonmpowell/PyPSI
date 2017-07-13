@@ -96,6 +96,8 @@ int load_gadget2(psi_mesh* mesh, const char* filename) {
 	float* tpos = (float*) psi_malloc(mesh->npart*sizeof(psi_rvec));
 	float* tvel = (float*) psi_malloc(mesh->npart*sizeof(psi_rvec));
 	int* tid = (int*) psi_malloc(mesh->npart*sizeof(psi_int));
+
+	printf("Hubble = %f\n", header.HubbleParam);
 	
 	// read in position data
 	e = fread(&blksize, sizeof(int), 1, f);

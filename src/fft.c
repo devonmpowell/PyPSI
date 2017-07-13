@@ -71,7 +71,7 @@ inline psi_real laplace(psi_rvec k, psi_rvec d) {
 	return 1.0/(fx+fy+fz);
 }
 
-void psi_do_phi(psi_grid* grid, psi_real* phi_out) {
+void psi_do_phi(psi_grid* grid, psi_real* phi_out, psi_real Gn) {
 
 	fftw_plan p, pinv;
 	fftw_complex* rhok;
@@ -116,8 +116,8 @@ void psi_do_phi(psi_grid* grid, psi_real* phi_out) {
 		kvec2 = kvec.x*kvec.x + kvec.y*kvec.y + kvec.z*kvec.z;
 
 		// Filter the FFT
-		rhok[dims.j*halfn.k*i + halfn.k*j + k][0] *= 1.0/(dims.i*dims.j*dims.k)*laplace(kvec, dx)*smooth(kvec, SMOOTH);
-		rhok[dims.j*halfn.k*i + halfn.k*j + k][1] *= 1.0/(dims.i*dims.j*dims.k)*laplace(kvec, dx)*smooth(kvec, SMOOTH);
+		rhok[dims.j*halfn.k*i + halfn.k*j + k][0] *= FOUR_PI*Gn/(dims.i*dims.j*dims.k)*laplace(kvec, dx)*smooth(kvec, SMOOTH);
+		rhok[dims.j*halfn.k*i + halfn.k*j + k][1] *= FOUR_PI*Gn/(dims.i*dims.j*dims.k)*laplace(kvec, dx)*smooth(kvec, SMOOTH);
 
 	}
 	pinv = fftw_plan_dft_c2r_3d(dims.i, dims.j, dims.k, rhok, phi_out, FFTW_ESTIMATE);

@@ -3,7 +3,7 @@
 
 // the main function
 // traces beams as defined by the grb_params passed in
-void psi_skymap(psi_grid* grid, psi_mesh* mesh, psi_int bstep) {
+void psi_skymap(psi_grid* grid, psi_mesh* mesh, psi_int bstep, psi_int mode) {
 
 	psi_int p, b, ax, e, v, tind, t; 
 	psi_dvec grind;
@@ -163,8 +163,6 @@ void psi_skymap(psi_grid* grid, psi_mesh* mesh, psi_int bstep) {
 					psi_real ttmass = 0.0;
 					elemmarks[e] = 1;
 
-					// a local copy of the element, in case it's modified
-					// make it periodic, get its bounding box, and check it against the grid
 					tmass = 0.0;
 					for(v = 0; v < vpere; ++v) {
 						tind = mesh->connectivity[e*vpere+v];
@@ -184,40 +182,102 @@ void psi_skymap(psi_grid* grid, psi_mesh* mesh, psi_int bstep) {
 			
 						// copy the position to the ghost array and compute its aabb
 						memcpy(gpos, &tetbuf.pos[(mesh->dim+1)*t], (mesh->dim+1)*sizeof(psi_rvec));
-						//psi_aabb(gpos, mesh->dim+1,grbox);
-						// TODO: check the boxes before clipping....
-						psi_clip_reduce_tet(gpos, beamfaces, 5, moments);
-						if(moments[0] <= 0.0) {
-							if(moments[0] < 0.0)
-								psi_printf("Moments < 0 ! %.5e\n", moments[0]);
-							continue;
-						} 
+						psi_aabb(gpos, mesh->dim+1, grbox);
 
+						if(mode == PSI_SKYMAP_RHO_LINEAR) {
 
-						// set up the vertex weights,
-						// depending on the specified weight scheme
-						for(v = 0; v < 4; ++v) {
-
-							// mass-weighted for debugging
-							vertweights[v] = tetbuf.mass[t]; 
-
-							// inverse r^2, gpos is already relative to the observer position
-							//vertweights[v] = tetbuf.mass[t]/(gpos[v].x*gpos[v].x+gpos[v].y*gpos[v].y+gpos[v].z*gpos[v].z); 
+							// TODO: check the boxes before clipping....
+							psi_clip_reduce_tet(gpos, beamfaces, 5, moments);
+							if(moments[0] <= 0.0) {
+								//if(moments[0] < 0.0)
+									//psi_printf("Moments < 0 ! %.5e\n", moments[0]);
+								continue;
+							} 
+	
+	
+							// set up the vertex weights,
+							// depending on the specified weight scheme
+							for(v = 0; v < 4; ++v) {
+	
+								// mass-weighted for debugging
+								vertweights[v] = tetbuf.mass[t]; 
+	
+								// inverse r^2, gpos is already relative to the observer position
+								//vertweights[v] = tetbuf.mass[t]/(gpos[v].x*gpos[v].x+gpos[v].y*gpos[v].y+gpos[v].z*gpos[v].z); 
+							}
+	
+							// subtract. Now moments[0->3] contain barycentric moments,
+							// properly weighted wrt the original tet vertices
+							// add the mass to the grid, linearly interpolating the vertex weights 
+							moments[0] -= (moments[1]+moments[2]+moments[3]); 
+							for(v = 0; v < 4; ++v) {
+								grid->fields[0][p] += vertweights[v]*moments[v]; 
+								mtot += vertweights[v]*moments[v]; 
+							}					
+						
 						}
 
-						// subtract. Now moments[0->3] contain barycentric moments,
-						// properly weighted wrt the original tet vertices
-						// add the mass to the grid, linearly interpolating the vertex weights 
-						moments[0] -= (moments[1]+moments[2]+moments[3]); 
-						for(v = 0; v < 4; ++v) {
-							grid->fields[0][p] += vertweights[v]*moments[v]; 
-							mtot += vertweights[v]*moments[v]; 
+
+						else if(mode == PSI_SKYMAP_RHO_SQUARED) {
+
+							printf(" tet grbox = %f %f %f to %f %f %f \n", grbox[0].x, grbox[0].y, grbox[0].z, grbox[1].x, grbox[1].y, grbox[1].z);
+
+							// make a new query to find elements close to this one
+							psi_int e1;
+							psi_rtree_query qry1;
+							psi_rtree_query_init(&qry1, &rtree, grbox);
+							while(psi_rtree_query_next(&qry1, &e1)) {
+
+								//printf("Found possibly overlapping elements!\n");
+
+
+							}
+
+
+#if 0
+
+							// TODO: check the boxes before clipping....
+							psi_clip_reduce_tet(gpos, beamfaces, 5, moments);
+							if(moments[0] <= 0.0) {
+								//if(moments[0] < 0.0)
+									//psi_printf("Moments < 0 ! %.5e\n", moments[0]);
+								continue;
+							} 
+	
+	
+							// set up the vertex weights,
+							// depending on the specified weight scheme
+							for(v = 0; v < 4; ++v) {
+	
+								// mass-weighted for debugging
+								vertweights[v] = tetbuf.mass[t]; 
+	
+								// inverse r^2, gpos is already relative to the observer position
+								//vertweights[v] = tetbuf.mass[t]/(gpos[v].x*gpos[v].x+gpos[v].y*gpos[v].y+gpos[v].z*gpos[v].z); 
+							}
+	
+							// subtract. Now moments[0->3] contain barycentric moments,
+							// properly weighted wrt the original tet vertices
+							// add the mass to the grid, linearly interpolating the vertex weights 
+							moments[0] -= (moments[1]+moments[2]+moments[3]); 
+							for(v = 0; v < 4; ++v) {
+								grid->fields[0][p] += vertweights[v]*moments[v]; 
+								mtot += vertweights[v]*moments[v]; 
+							}		
+#endif			
+						
 						}
+
+
+
 					}
 				}
 				rold = rnew;
 			}
 		}
+
+		if(p%512==0)
+			psi_printf("\rPixel %d of %d, %.1f%%", p, grid->n.k, (100.0*p)/grid->n.k);
 	}
 
 	psi_rtree_destroy(&rtree);

@@ -600,15 +600,16 @@ static PyObject *PSI_skymap(PyObject *self, PyObject *args, PyObject* kwds) {
 
 	psi_grid cgrid;
 	psi_mesh cmesh;
-	psi_int bstep;
+	psi_int bstep, mode;
 	Mesh* mesh;
 	Grid* grid;	
 	//npy_intp* npdims;
 	npy_intp nverts;
-	static char *kwlist[] = {"grid", "mesh", "bstep", NULL};
+	static char *kwlist[] = {"grid", "mesh", "bstep", "mode", NULL};
 
 	bstep = 1;
-	if(!PyArg_ParseTupleAndKeywords(args, kwds, "OO|i", kwlist, &grid, &mesh, &bstep))
+	mode = PSI_SKYMAP_RHO_LINEAR;
+	if(!PyArg_ParseTupleAndKeywords(args, kwds, "OO|ii", kwlist, &grid, &mesh, &bstep, &mode))
 		return MAKE_PY_NONE;
 
 	printf("Got grid verts...\n");
@@ -625,13 +626,57 @@ static PyObject *PSI_skymap(PyObject *self, PyObject *args, PyObject* kwds) {
 	if(cmesh.dim != cgrid.dim)
 		Py_RETURN_NONE;
 
-	printf("----Making hpring skymap-----\n");
+	printf("----Making hpring skymap, mode = %d-----\n", mode);
 
-	psi_skymap(&cgrid, &cmesh, bstep);
+	psi_skymap(&cgrid, &cmesh, bstep, mode);
 
    /* Do your stuff here. */
    Py_RETURN_NONE;
 }
+
+
+
+static PyObject *PSI_beamtrace(PyObject *self, PyObject *args, PyObject* kwds) {
+
+	psi_grid cgrid;
+	psi_mesh cmesh;
+	psi_int bstep, mode, metric;
+	char* cmetric;
+	Grid* grid;	
+	psi_rvec obspos, obsvel;
+	//npy_intp* npdims;
+	npy_intp nverts;
+	static char *kwlist[] = {"grid", "metric", "obspos", "obsvel", NULL};
+
+	bstep = 1;
+	mode = PSI_SKYMAP_RHO_LINEAR;
+	if(!PyArg_ParseTupleAndKeywords(args, kwds, "Os|(ddd)(ddd)", kwlist, &grid, &cmetric, &obspos.x, &obspos.y, &obspos.z, &obsvel.x, &obsvel.y, &obsvel.z))
+		return MAKE_PY_NONE;
+
+	PSI_Grid2grid(grid, &cgrid);
+	if(cgrid.type != PSI_GRID_HPRING || cgrid.dim != 3) 
+		Py_RETURN_NONE;
+
+	if(strcmp(cmetric, "minkowski") == 0) {
+		metric = PSI_METRIC_MINKOWSKI; 
+	}
+	else {
+		psi_printf("Invalid metric\n");
+		Py_RETURN_NONE;
+	}
+
+	printf("---- GR beamtracing... -----\n");
+
+	printf("grid.nside = %d, metric = %s, obspos = %f %f %f\n", cgrid.n.j, cmetric, obspos.x, obspos.y, obspos.z);
+
+	//psi_skymap(&cgrid, &cmesh, bstep, mode);
+
+   /* Do your stuff here. */
+   Py_RETURN_NONE;
+}
+
+
+
 
 static PyObject *PSI_voxels(PyObject *self, PyObject *args, PyObject* kwds) {
 
@@ -661,11 +706,13 @@ static PyObject *PSI_voxels(PyObject *self, PyObject *args, PyObject* kwds) {
 static PyObject *PSI_phi(PyObject *self, PyObject *args, PyObject* kwds) {
 
 	psi_grid cgrid;
+	psi_real Gn;
 	Grid* grid;	
 
-	static char *kwlist[] = {"grid", NULL};
+	static char *kwlist[] = {"grid", "Gn", NULL};
 
-	if(!PyArg_ParseTupleAndKeywords(args, kwds, "O", kwlist, &grid))
+	Gn = 1.0;
+	if(!PyArg_ParseTupleAndKeywords(args, kwds, "O|d", kwlist, &grid, &Gn))
 		return MAKE_PY_NONE;
 
 
@@ -685,7 +732,7 @@ static PyObject *PSI_phi(PyObject *self, PyObject *args, PyObject* kwds) {
 
 	printf("Doing the FFT\n");
 
-	psi_do_phi(&cgrid, PyArray_DATA(retar));
+	psi_do_phi(&cgrid, PyArray_DATA(retar), Gn);
 
 	return retar;
 }
@@ -707,6 +754,7 @@ static PyMethodDef module_methods[] = {
    	{"skymap", (PyCFunction)PSI_skymap, METH_KEYWORDS, "Makes a skymap"},
    	{"voxels", (PyCFunction)PSI_voxels, METH_KEYWORDS, "Voxelizes"},
    	{"phi", (PyCFunction)PSI_phi, METH_KEYWORDS, "phi"},
+   	{"beamtrace", (PyCFunction)PSI_beamtrace, METH_KEYWORDS, "beamtrace"},
     {NULL, NULL, 0, NULL}
 };
 

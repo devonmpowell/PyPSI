@@ -73,16 +73,11 @@ void psi_voxels(psi_grid* grid, psi_mesh* mesh) {
 
 			// make ghosts and sample tets to the grid
 			psi_make_ghosts(gpos, grbox, &nghosts, (mesh->dim+1), grid->window, mesh);
-			for(g = 0; g < nghosts; ++g) {
-				psi_rvec* curtet = &gpos[(mesh->dim+1)*g];
-				//if(grid->sampling == PSI_SAMPLING_VOLUME)
-					psi_voxelize_tet(&gpos[(mesh->dim+1)*g], &tetbuf.vel[(mesh->dim+1)*t], tetbuf.mass[t], &grbox[2*g], grid);
-				//else if(grid->sampling == PSI_SAMPLING_POINT)
-					//psi_point_sample_tet(&gpos[(mesh->dim+1)*g], &tetbuf.vel[(mesh->dim+1)*t], tetbuf.mass[t], &grbox[2*g], grid);
-			}
+			for(g = 0; g < nghosts; ++g) 
+				psi_voxelize_tet(&gpos[(mesh->dim+1)*g], &tetbuf.vel[(mesh->dim+1)*t], tetbuf.mass[t], &grbox[2*g], grid);
 		}
 		if(e%512==0)
-			psi_printf("\rElement %d of %d, %.1f %", e, mesh->nelem, (100.0*e)/mesh->nelem);
+			psi_printf("\rElement %d of %d, %.1f%%", e, mesh->nelem, (100.0*e)/mesh->nelem);
 	}
 	psi_tet_buffer_destroy(&tetbuf);
 
