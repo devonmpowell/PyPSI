@@ -2,6 +2,7 @@ import unittest
 from unittest import TestCase, main
 import numpy as np
 import PSI as psi
+from mpl_toolkits.mplot3d import Axes3D
 
 import sys
 
@@ -63,15 +64,54 @@ class PSIMODTests(TestCase):
 
     def test_beam_tracing(self):
 
+        with open('/home/devon/HDD/PS-128-vm/geo/0137', 'rb') as f: 
+
+            f.seek(0)
+            phi = np.fromfile(f, count=128**3,
+                dtype=np.float32).reshape((128,128,128))
+            print phi.shape, np.min(phi), np.max(phi)
+
+
+            f.seek(0+3*128**3)
+            gradphi = np.fromfile(f, count=3*128**3,
+                dtype=np.float32).reshape((128,128,128,3))
+            print gradphi.shape, np.min(gradphi), np.max(gradphi)
+
+            f.close()
+
+        mygrady = np.roll(phi,1,axis=0)-np.roll(phi,-1,axis=0)
+
+        fig, ax = plt.subplots(1,2,figsize=(20,10))
+        ax[0].imshow(phi[:,64,:])
+        ax[1].imshow(mygrady[:,64,:])
+        #ax[1].imshow(gradphi[64,:,:,0])
+        #ax[1].contour(phi[64,:,:])
+        plt.show()
+
+
+        return
 
         #print
-        grid = psi.Grid(type='hpring', n=32) 
-
-        psi.beamtrace(grid=grid, metric='minkowski', obspos=(0.,0.,0.), obsvel=(0.,0.,0.))
-
+        grid = psi.Grid(type='hpring', n=8) 
         
+        rayinfo = psi.beamtrace(grid=grid, metric='flrw', obspos=(0.,0.,0.), obsvel=(0.,0.,0.))
+
+        print rayinfo.shape
+        print rayinfo[0,:,:]
+
+
+
+        fig = plt.figure()
+        ax = fig.gca(projection='3d')
+        for tray in rayinfo:
+            ray = tray[tray[:,0] > 0.0]
+            ax.plot(ray[:,1], ray[:,2], ray[:,3], 'k-', lw=0.2, label='parametric curve')
+        plt.show()
+
+
+
         # show the pixel area plot
-        hp.mollview(np.log10(grid.fields['m']), title='Mass map, err = %.5e'%err)
+        hp.mollview((grid.fields['m']), title='minkowski')
         plt.show()
 
 
@@ -86,7 +126,7 @@ class PSIMODTests(TestCase):
         #mesh = psi.Mesh(filename='data/box128_000', loader='gadget2')
         #print mesh.pos[mesh.connectivity][12475]
 
-        grid = psi.Grid(type='hpring', n=32) 
+        grid = psi.Grid(type='hpring', n=8) 
 
         psi.skymap(grid=grid, mesh=mesh, bstep=2, mode=1)
 

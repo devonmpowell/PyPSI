@@ -1,20 +1,113 @@
-#include "skymap.h"
+#include "beamtrace.h"
 
+void psi_get_phi_and_grad(psi_real* phi, psi_4vec *gradphi, psi_4vec pos, psi_int metric) {
+
+	psi_int ax;
+	*phi = 0.0;
+	memset(gradphi, 0, sizeof(psi_4vec));
+
+	if(metric == PSI_METRIC_FLRW) {
+
+		//return;
+	
+		psi_real r0 = 2.0;
+		psi_4vec x0 = {{0.0,30.0,20.0,20.0}};
+		psi_real phitmp = -0.2*exp(-((pos.x-x0.x)*(pos.x-x0.x)+(pos.y-x0.y)*(pos.y-x0.y)+(pos.z-x0.z)*(pos.z-x0.z))/(2*r0*r0));
+		*phi = phitmp;
+		for(ax = 1; ax < 4; ++ax) 
+			gradphi->txyz[ax] = phitmp*(x0.txyz[ax]-pos.txyz[ax])/(r0*r0);
+	}
+
+}
+
+void psi_get_4acc(psi_4vec *acc, psi_4vec pos, psi_4vec vel, psi_int metric) {
+
+	psi_int ax;
+	psi_real phi;
+	psi_4vec gradphi;
+
+	if(metric == PSI_METRIC_MINKOWSKI) {
+		for(ax = 0; ax < 4; ++ax)
+			acc->txyz[ax] = 0.0;
+	}
+
+
+	else if(metric == PSI_METRIC_FLRW) {
+
+		// Hubble parameter
+		psi_real hubble = 0.0;
+
+		// set Hubble term first
+		// TODO: the t-part of this has been reduce using the null condition
+		// -- should we not enforce it here??
+		for(ax = 0; ax < 4; ++ax)
+			acc->txyz[ax] = -2*hubble*vel.txyz[ax]*vel.t; 
+
+		// do the gradients of phi
+		psi_get_phi_and_grad(&phi, &gradphi, pos, metric);
+		psi_real vel2 = vel.t*vel.t + vel.x*vel.x + vel.y*vel.y + vel.z*vel.z;
+		psi_real vdotgrad = vel.t*gradphi.t + vel.x*gradphi.x + vel.y*gradphi.y + vel.z*gradphi.z;
+		acc->t += -1/(1+2*phi)*(2*vel.t*vdotgrad-vel2*gradphi.t);
+		for(ax = 1; ax < 4; ++ax)
+			acc->txyz[ax] += 1/(1-2*phi)*(2*vel.txyz[ax]*vdotgrad-vel2*gradphi.txyz[ax]);
+
+	}
+
+}
+
+
+psi_real psi_4dot(psi_4vec dx0, psi_4vec dx1, psi_4vec x, psi_int metric) {
+
+	psi_real phi;
+	psi_4vec gradphi;
+
+	if(metric == PSI_METRIC_MINKOWSKI) {
+		return (-dx0.t*dx1.t*PSI_CLIGHT*PSI_CLIGHT + dx0.x*dx1.x + dx0.y*dx1.y + dx0.z*dx1.z);
+	}
+
+	if(metric == PSI_METRIC_FLRW) {
+		psi_real scalefac = 1.0;
+		psi_get_phi_and_grad(&phi, &gradphi, x, metric);
+		return scalefac*scalefac*(-dx0.t*dx1.t*PSI_CLIGHT*PSI_CLIGHT*(1+2*phi)
+				+ (dx0.x*dx1.x + dx0.y*dx1.y + dx0.z*dx1.z)*(1-2*phi));
+	}
+}
+
+void psi_enforce_null_time(psi_4vec *vel, psi_4vec x, psi_int metric) {
+
+	// TODO: more clever transformation from observer frame!
+
+	psi_real phi;
+	psi_4vec gradphi;
+
+	if(metric == PSI_METRIC_MINKOWSKI) {
+		vel->t = sqrt(vel->x*vel->x + vel->y*vel->y + vel->z*vel->z)/PSI_CLIGHT;
+	}
+
+	else if(metric == PSI_METRIC_FLRW) {
+		psi_get_phi_and_grad(&phi, &gradphi, x, metric);
+		vel->t = sqrt((vel->x*vel->x + vel->y*vel->y + vel->z*vel->z)*(1-2*phi)/(1+2*phi))/PSI_CLIGHT;
+	}
+
+
+}
 
 // the main function
 // traces beams as defined by the grb_params passed in
-void psi_skymap(psi_grid* grid, psi_mesh* mesh, psi_int bstep, psi_int mode) {
+void psi_beamtrace(psi_grid* grid, psi_mesh* mesh, psi_int bstep, psi_int metric, psi_real* outar, psi_dvec ardim) {
 
-	psi_int p, b, ax, e, v, tind, t; 
+	psi_int p, b, ax, e, v, tind, t, terminate_beam, step; 
 	psi_dvec grind;
-	psi_real vol;
+	psi_real dalpha, ds2tot, vol;
 	psi_real moments[10];
 	psi_real vertweights[4];
 	psi_rvec corners[64], center, brbox[2];
 	psi_rvec gpos[mesh->dim+1], grbox[2];
 	psi_int vpere = mesh->elemtype;
+	psi_beam beam;
 	psi_plane beamfaces[16];
 	psi_tet_buffer tetbuf;
+	psi_beam cbeam;
 
 	psi_rvec rawverts[3]; 
 	psi_rvec beamverts[6];
@@ -22,65 +115,13 @@ void psi_skymap(psi_grid* grid, psi_mesh* mesh, psi_int bstep, psi_int mode) {
 	psi_rvec tpos[vpere], tvel[vpere], trbox[2];
 	psi_real tmass;
 
+	psi_4vec dx, dv, acc;
+
 	if(grid->type != PSI_GRID_HPRING)
 		return;
 
 	psi_rvec obspos = {{20.,20.,20.}};
 
-	psi_real mtot = 0.0;
-
-	// First, build an rtree to get logN spatial queries
-	psi_rtree rtree;
-	psi_rtree_query qry;	
-	psi_rtree_init(&rtree, 2*mesh->nelem);
-	for(e = 0; e < mesh->nelem; ++e) {
-		// make it periodic, get its bounding box, and check it against the grid
-		for(v = 0; v < vpere; ++v) {
-			tpos[v] = mesh->pos[mesh->connectivity[e*vpere+v]];
-			mtot += (1.0/vpere)*mesh->mass[mesh->connectivity[e*vpere+v]];
-		}
-
-		// TODO: mesh->box may not exist for nonperiodic meshes!!!
-		if(!psi_aabb_periodic(tpos, trbox, mesh->box, mesh)) continue;
-		for(ax = 0; ax < 3; ++ax) {
-			trbox[0].xyz[ax] -= obspos.xyz[ax];
-			trbox[1].xyz[ax] -= obspos.xyz[ax];
-		}
-		// insert each element into the tree
-		psi_rtree_insert(&rtree, trbox, e);
-	}
-	//psi_tet_buffer_init(&tetbuf, 1000.0, 0);
-	psi_tet_buffer_init(&tetbuf, 1.0, 4);
-
-	printf("Total mass loaded = %.5e\n", mtot);
-
-	/// TODO: test
-	mtot = 0.0;
-	for(ax = 0; ax < 3; ++ax) {
-		brbox[0].xyz[ax] = mesh->box[0].xyz[ax] - obspos.xyz[ax]; 
-		brbox[1].xyz[ax] = mesh->box[1].xyz[ax] - obspos.xyz[ax]; 
-	}
-	psi_rtree_query_init(&qry, &rtree, brbox);
-	while(psi_rtree_query_next(&qry, &e)) {
-		tmass = 0.0;
-		for(v = 0; v < vpere; ++v) {
-			tind = mesh->connectivity[e*vpere+v];
-			tmass += (1.0/vpere)*mesh->mass[tind]; 
-		}
-		mtot += tmass;
-	}
-	printf("Total mass queried = %.5e\n", mtot);
-
-	/// RTREE test
-	// see whether all bound boxes completely contain their children
-	//psi_rtree_print(stdout, &rtree);
-
-	psi_real omtot = 0.0;
-	
-	psi_int* elemmarks = psi_malloc(mesh->nelem*sizeof(psi_int));
-	memset(elemmarks, 0, mesh->nelem*sizeof(psi_int));
-
-	mtot = 0.0;
 
 	// for every pixel in the image...
 	memset(grid->fields[0], 0, grid->n.k*sizeof(psi_real));
@@ -90,10 +131,61 @@ void psi_skymap(psi_grid* grid, psi_mesh* mesh, psi_int bstep, psi_int mode) {
 		// this depends on the pixelization scheme given by grbp
 		grind.i = p;
 		if(!psi_grid_get_cell_geometry(grid, grind, bstep, corners, &center, &vol)) {
-		
 			printf("Bad cell geometry!\n");
 			continue;
 		} 
+
+		if(fabs(center.z) > 0.1) continue;
+		//if(p > 10) continue;
+		//printf("pix %d, center = %f %f %f\n", p, center.x, center.y, center.z);
+
+
+		// make the position and velocity 4-vectors
+		// enforce ds^2 = 0 for the tangent vector 
+		for(ax = 0; ax < 3; ++ax) {
+			cbeam.pos.txyz[ax+1] = obspos.xyz[ax];
+			cbeam.vel.txyz[ax+1] = center.xyz[ax];
+		}
+		cbeam.pos.t = 0.0;
+		psi_enforce_null_time(&cbeam.vel, cbeam.pos, metric);
+
+		// trace the beam
+		dalpha = 0.01;
+		//psi_real ds2tot = 0.0;
+		cbeam.alpha = 0.0;
+		for(terminate_beam = 0, step = 0; step < 100000 && !terminate_beam; ++step) {
+		
+			// save ray samples for plotting
+			for(ax = 0; ax < 4; ++ax)
+				outar[p*ardim.j*ardim.k + step*ardim.k + ax] = cbeam.pos.txyz[ax];
+		
+			// get the 4-acceleration
+			// calculate the displacement vector for this step
+			// get ds2 to check enforcement of null condition
+			psi_get_4acc(&acc, cbeam.pos, cbeam.vel, metric);
+			for(ax = 0; ax < 4; ++ax) {
+				dx.txyz[ax] = dalpha*cbeam.vel.txyz[ax]; 
+				dv.txyz[ax] = dalpha*acc.txyz[ax]; 
+			} 
+
+			// update beam 4-vectors 
+			// TODO: forward Euler for now
+			cbeam.alpha += dalpha;
+			for(ax = 0; ax < 4; ++ax) {
+				cbeam.pos.txyz[ax] += dx.txyz[ax];
+				cbeam.vel.txyz[ax] += dv.txyz[ax];
+			} 
+		
+			// check beam stopping criteria
+			if(cbeam.alpha > 30.0)
+				terminate_beam = 1;
+		}
+
+		// check the final 4-velocity to see that it is still null
+		printf("Final velocity U*u = %.5e\n", psi_4dot(cbeam.vel, cbeam.vel, cbeam.pos, metric));
+		grid->fields[0][p] = psi_4dot(cbeam.vel, cbeam.vel, cbeam.pos, metric);
+
+#if 0
 
 		// divide the pixel into four triangular beams,
 		// all four share the center point 
@@ -274,45 +366,15 @@ void psi_skymap(psi_grid* grid, psi_mesh* mesh, psi_int bstep, psi_int mode) {
 				rold = rnew;
 			}
 		}
+#endif
 
 		if(p%512==0)
 			psi_printf("\rPixel %d of %d, %.1f%%", p, grid->n.k, (100.0*p)/grid->n.k);
-	}
 
-	psi_rtree_destroy(&rtree);
-
-	printf("Total mass mapped = %.5e\n", mtot);
-	printf("Omtot/4pi-1 = %.5e\n", omtot/(FOUR_PI)-1.0);
-
-	// make sure all elements were used...
-	//for(e = 0; e < mesh->nelem; ++e) {
-		//if(elemmarks[e]) continue;
-		//printf(" Element %d was never used !!!---!!!\n", e);
-	//}
-	psi_free(elemmarks);
-
-#if 0
-		// refine elements into the tet buffer 
-		// loop over each tet in the buffer
-		psi_tet_buffer_refine(&tetbuf, tpos, tvel, tmass, mesh->elemtype);
-		for(t = 0; t < tetbuf.num; ++t) {
-
-			// copy the position to the ghost array and compute its aabb
-			memcpy(gpos, &tetbuf.pos[(mesh->dim+1)*t], (mesh->dim+1)*sizeof(psi_rvec));
-			psi_aabb(gpos, mesh->dim+1,grbox);
-
-			// make ghosts and sample tets to the grid
-			psi_make_ghosts(gpos, grbox, &nghosts, (mesh->dim+1), grid->window, mesh);
-			for(g = 0; g < nghosts; ++g) {
-				psi_rvec* curtet = &gpos[(mesh->dim+1)*g];
-				//if(grid->sampling == PSI_SAMPLING_VOLUME)
-					psi_voxelize_tet(&gpos[(mesh->dim+1)*g], &tetbuf.vel[(mesh->dim+1)*t], tetbuf.mass[t], &grbox[2*g], grid);
-				//else if(grid->sampling == PSI_SAMPLING_POINT)
-					//psi_point_sample_tet(&gpos[(mesh->dim+1)*g], &tetbuf.vel[(mesh->dim+1)*t], tetbuf.mass[t], &grbox[2*g], grid);
-			}
-		}
+#ifdef PYMODULE 
+		PyErr_CheckSignals();
 #endif
-
+	}
 
 	// if we are in healpix, solve for the correction factors
 	// that make it truly equal-area
@@ -320,107 +382,3 @@ void psi_skymap(psi_grid* grid, psi_mesh* mesh, psi_int bstep, psi_int mode) {
 		//correct_healpix_edges(grbp, 1.0e-6);
 } 
 
-#if 0
-// traces a beam defined by the current 
-void trace_beam(grb_params* grbp, grb_beam* beam) {
-
-	int v, ax;
-	real r2;
-	grb_beam btmp;
-
-	// make a local copy
-	btmp = *beam;
-	btmp.flux = 0.0;
-
-	if(grbp->pix_type == PIX_ORTHO) {
-		int andcmp = 1;
-		int orcmp = 0;
-		for(v = 0; v < 3; ++v) {
-		
-			r2 = btmp.pos[v][1]*btmp.pos[v][1]+btmp.pos[v][2]*btmp.pos[v][2];
-			andcmp &= (r2 < 1.0);
-			orcmp |= (r2 < 1.0);
-		}
-	
-		if(andcmp)
-			btmp.flux = 1.0;
-	
-	}
-	else if(grbp->pix_type == PIX_HEALPIX) {
-		//btmp.flux = btmp.pos[2][3];
-		//
-		// spatial indices start at 1!
-		btmp.flux = omega(&btmp.pos[0][1], &btmp.pos[1][1], &btmp.pos[2][1]); 
-	}
-
-
-
-	*beam = btmp;
-}
-
-void correct_healpix_edges(grb_params* grbp, real tol) {
-
-		printf("Healpix detected. Solving the correction matrix for curved edges...\n");
-
-		int p, n, b, ax, iter;
-		int neighb[8];
-		real max_err, err;
-		real corners[4][3];
-		real center[3];
-		real ptmp[3][3];
-		real* transfer, *allomega;
-
-		// allocate an array for the (fractional) flux transfers between edges
-		// identified by a pixel and its eastern neighbors
-		transfer = malloc(2*grbp->npix*sizeof(real));
-		allomega = malloc(grbp->npix*sizeof(real));
-		memset(transfer, 0, 2*grbp->npix*sizeof(real));
-		memset(allomega, 0, grbp->npix*sizeof(real));
-
-		// get the solid angle as quoted by flat pixel edges 
-		// divide the pixel into four triangular beams,
-		// all four share the center point 
-		for(p = 0; p < grbp->npix; ++p) {
-			get_pixel_vectors(grbp, p, &corners[0][0], center);
-			for(b = 0; b < 4; ++b) {
-				for(ax = 0; ax < 3; ++ax) {
-					ptmp[0][ax] = corners[b][ax];
-					ptmp[1][ax] = corners[(b+1)%4][ax];
-					ptmp[2][ax] = center[ax]; 
-				}
-				allomega[p] += omega(ptmp[0], ptmp[1], ptmp[2])*grbp->npix/FOUR_PI; 
-			}
-		}
-
-
-		// iteratively relax the grid to find the solution
-		max_err = 1.0e10;
-		for(iter = 0; iter < 10 && max_err > tol; ++iter) {
-
-			max_err = 0.0;
-			for(p = 0; p < grbp->npix; ++p) {
-	
-				// get the error
-				err = fabs(1.0-allomega[p]);
-				if(err > max_err) max_err = err;
-	
-				// get the pixel neighbors
-				neighbors(grbp, p, neighb);
-				printf("Got neighbors for pixel %d:\n", p);
-				for(n = 0; n < 8; ++n)
-					printf(" - %d\n", neighb[n]);
-				printf(" - total solid angle = %.5e, err = %.5e\n", allomega[p], err); 
-			
-			}
-		
-			printf(" -- Iter %d, max_err = %.5e\n", iter, max_err);
-		
-		}
-
-
-		free(transfer);
-		free(allomega);
-
-}
-
-#endif

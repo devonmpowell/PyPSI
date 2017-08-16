@@ -57,6 +57,10 @@ typedef union {
 	psi_real xyz[3];
 } psi_rvec;
 typedef union {
+	struct { psi_real t, x, y, z; };
+	psi_real txyz[4];
+} psi_4vec;
+typedef union {
 	struct { psi_int i, j, k; };
 	psi_int ijk[3];
 } psi_dvec;

@@ -7,6 +7,7 @@
 #include "grid.h"
 #include "mesh.h"
 #include "skymap.h"
+#include "beamtrace.h"
 
 #define MAKE_PY_NONE Py_BuildValue("")
 
@@ -644,7 +645,8 @@ static PyObject *PSI_beamtrace(PyObject *self, PyObject *args, PyObject* kwds) {
 	char* cmetric;
 	Grid* grid;	
 	psi_rvec obspos, obsvel;
-	//npy_intp* npdims;
+	psi_dvec gdim;
+	npy_intp npdims[4];
 	npy_intp nverts;
 	static char *kwlist[] = {"grid", "metric", "obspos", "obsvel", NULL};
 
@@ -660,6 +662,9 @@ static PyObject *PSI_beamtrace(PyObject *self, PyObject *args, PyObject* kwds) {
 	if(strcmp(cmetric, "minkowski") == 0) {
 		metric = PSI_METRIC_MINKOWSKI; 
 	}
+	if(strcmp(cmetric, "flrw") == 0) {
+		metric = PSI_METRIC_FLRW; 
+	}
 	else {
 		psi_printf("Invalid metric\n");
 		Py_RETURN_NONE;
@@ -669,10 +674,23 @@ static PyObject *PSI_beamtrace(PyObject *self, PyObject *args, PyObject* kwds) {
 
 	printf("grid.nside = %d, metric = %s, obspos = %f %f %f\n", cgrid.n.j, cmetric, obspos.x, obspos.y, obspos.z);
 
-	//psi_skymap(&cgrid, &cmesh, bstep, mode);
+
+
+
+	npdims[0] = cgrid.n.k;
+	npdims[1] = 100024; 
+	npdims[2] = 4; 
+	gdim.i = npdims[0];
+	gdim.j = npdims[1];
+	gdim.k = npdims[2];
+	PyObject* rayinfo = PyArray_SimpleNew(3, npdims, NPY_DOUBLE);
+	psi_real* infar = PyArray_DATA((PyArrayObject*)rayinfo);
+
+	psi_beamtrace(&cgrid, &cmesh, bstep, metric, infar, gdim);
 
    /* Do your stuff here. */
-   Py_RETURN_NONE;
+   //Py_RETURN_NONE;
+   return rayinfo;
 }
 
 
@@ -782,7 +800,7 @@ PyMODINIT_FUNC initPSI(void) {
 	PyModule_AddObject(m, "Grid", (PyObject*)&GridType);
 
 
-	// TODO: add macroed constants to the module
+	// TODO: add macroed constants to the Python module 
 }
 
 #endif // PYMODULE

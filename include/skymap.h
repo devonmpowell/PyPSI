@@ -23,19 +23,5 @@
 
 void psi_skymap(psi_grid* grid, psi_mesh* mesh, psi_int bstep, psi_int mode);
 
-void psi_beamtrace(psi_grid* grid, psi_int metric, psi_rvec obspos, psi_rvec obsvel);
-
-
-// stores a beam: 3 vertices with corresponding 4-positions
-// and 4-velocities 
-typedef struct {
-
-	psi_real pos[3][4];
-	psi_real vel[4][4];
-	psi_real flux;
-
-} psi_beam;
-
-
 
 #endif // _SKYMAP_
