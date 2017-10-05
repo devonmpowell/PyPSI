@@ -7,6 +7,120 @@ import matplotlib.pyplot as plt
 import healpy as hp
 import sys
 
+# set tolerances for floating-points checks
+errtol = 1.0e-4
+
+
+class MassMapTests(TestCase):
+
+    def test_skymap(self):
+
+        print
+        snap = 'data/snapshot_010'
+        nside = 16 # 32
+        mesh = psi.Mesh(filename=snap, loader='gadget2')
+        #mesh = psi.Mesh(filename='', loader='hacky_test')
+        grid = psi.Grid(type='hpring', n=nside) 
+        psi.skymap(grid=grid, mesh=mesh, bstep=2, mode=0)
+
+        # show the mass map and error
+        elemmass = np.sum(mesh.mass)
+        voxmass = np.sum(grid.fields["m"])
+        err = np.abs(1.0-voxmass/elemmass)
+        print ' - total mass =', voxmass 
+        print " - mass error = ", err 
+        hp.mollview(np.log10(grid.fields['m']), title='Mass map')
+        plt.show()
+        self.assertAlmostEqual(err, 0.0, delta=errtol)
+ 
+
+    def test_voxels(self):
+
+        # load a mesh, make a grid, and voxelize
+        print
+        ngrid = 3*(128,) 
+        snap = 'data/snapshot_010'
+        mesh = psi.Mesh(filename=snap, loader='gadget2')
+        grid = psi.Grid(type='cart', n=ngrid, window=(mesh.boxmin, mesh.boxmax)) 
+        psi.voxels(grid=grid, mesh=mesh)
+
+        # check the total mass
+        # show a picture
+        elemmass = np.sum(mesh.mass)
+        voxmass = np.sum(grid.fields["m"])
+        err = np.abs(1.0-voxmass/elemmass)
+        print ' - total mass =', voxmass 
+        print " - mass error = ", err 
+        #plt.imshow(np.log10(grid.fields["m"][:,:,32]))
+        #plt.show()
+        self.assertAlmostEqual(err, 0.0, delta=errtol)
+       
+
+# tests FFT stuff.. potential, power spectrum, etc 
+class FFTTests(TestCase):
+
+    def test_phi_simple(self):
+
+        # loads, voxelizes, and computes the potential field
+        print
+        dim = 3
+        box = 128 
+        win = 21.0 
+        G = 21.12131
+        nk = 2
+        grid = psi.Grid(type='cart', n=dim*(box,), window=(dim*(0.,), dim*(win,))) 
+
+        # set phi min, max such that phi min/max = -+1
+        rho0 = -(np.pi*nk**2)/(G*win**2)
+        grid.fields['m'][:,:,:] = rho0*np.sin(2*np.pi*nk*np.arange(box)/box)
+        phi = psi.phi(grid, Gn=G)
+        analytic = np.sin(2*np.pi*nk*np.arange(box)/box)
+        maxerr = np.max(np.abs(phi-analytic))
+        print ' - max err in phi =', maxerr
+
+        # test that the max error is small
+        self.assertAlmostEqual(maxerr, 0.0, delta=errtol)
+
+
+# test basic Grid functionality 
+class GridTests(TestCase):
+
+    def test_grid_cart(self):
+        print
+        grid = psi.Grid(type='cart', n=(10,10,10)) # default is 64^3 unit box
+        print ' - type =', grid.type 
+        print ' - fields =', grid.fields['m'].dtype, grid.fields['m'].shape
+        print ' - window =', grid.winmin, grid.winmax
+        print ' - n =', grid.n
+        print ' - d =', grid.d
+        center, boundary, vol = grid.getCellGeometry(cell=[123])
+        #print center.shape, boundary.shape, vol.shape
+        #print center, boundary, vol
+
+    def test_grid_hpring(self):
+        print
+        grid = psi.Grid(type='hpring')
+        print ' - type =', grid.type 
+        print ' - fields =', grid.fields['m'].dtype, grid.fields['m'].shape
+        print ' - window =', grid.winmin, grid.winmax
+        print ' - n =', grid.n
+        print ' - d =', grid.d
+
+        # get a pixel boundary
+        center, boundary, vol = grid.getCellGeometry(cell=None, bstep=2)
+        #print center, boundary, vol
+
+# test basic Mesh functionality 
+class MeshTests(TestCase):
+
+    def test_mesh_init(self):
+        print
+        mesh = psi.Mesh(filename='data/snapshot_010', loader='gadget2')
+        print ' - pos =', mesh.pos.dtype, mesh.pos.shape
+        print ' - vel =', mesh.vel.dtype, mesh.vel.shape
+        print ' - conn =', mesh.connectivity.dtype, mesh.connectivity.shape
+        print ' - box =', mesh.boxmin, mesh.boxmax
+
 # test basic PSIMOD functionality 
 class PSIMODTests(TestCase):
 
@@ -108,138 +222,6 @@ class PSIMODTests(TestCase):
         hp.mollview(np.log10(grid.fields['m']))#, title='Mass map, err = %.5e'%err)#, min = -4)
         plt.show()
 
-
-class MassMapTests(TestCase):
-
-    def test_skymap(self):
-
-        print
-        snap = 'data/snapshot_010'
-        nside = 32
-        mesh = psi.Mesh(filename=snap, loader='gadget2')
-        #mesh = psi.Mesh(filename='', loader='hacky_test')
-        grid = psi.Grid(type='hpring', n=nside) 
-        psi.skymap(grid=grid, mesh=mesh, bstep=2, mode=0)
-
-        # show the mass map and error
-        elemmass = np.sum(mesh.mass)
-        voxmass = np.sum(grid.fields["m"])
-        print "mass = ", voxmass, 'err =', np.abs(1.0-voxmass/elemmass)
-        hp.mollview(np.log10(grid.fields['m']), title='Mass map')
-        plt.show()
- 
-
-    def test_voxels(self):
-
-        # load a mesh, make a grid, and voxelize
-        print
-        ngrid = 3*(128,) 
-        snap = 'data/snapshot_010'
-        mesh = psi.Mesh(filename=snap, loader='gadget2')
-        grid = psi.Grid(type='cart', n=ngrid, window=(mesh.boxmin, mesh.boxmax)) 
-        psi.voxels(grid=grid, mesh=mesh)
-
-        # check the total mass
-        # show a picture
-        elemmass = np.sum(mesh.mass)
-        voxmass = np.sum(grid.fields["m"])
-        print 'total mass =', voxmass 
-        print " mass error = ", np.abs(1.0-voxmass/elemmass)
-        plt.imshow(np.log10(grid.fields["m"][:,:,32]))
-        plt.show()
-       
-
-# tests FFT stuff.. potential, power spectrum, etc 
-class FFTTests(TestCase):
-
-    def test_phi_simple(self):
-
-        # loads, voxelizes, and computes the potential field
-        print
-        dim = 3
-        box = 128 
-        win = 21.0 
-        G = 21.12131
-        nk = 2
-        print "g = ", G
-        grid = psi.Grid(type='cart', n=dim*(box,), window=(dim*(0.,), dim*(win,))) 
-
-        # set phi min, max such that phi min/max = -+1
-        rho0 = -(np.pi*nk**2)/(G*win**2)
-        grid.fields['m'][:,:,:] = rho0*np.sin(2*np.pi*nk*np.arange(box)/box)
-        phi = psi.phi(grid, Gn=G)
-        print 'phi min, max =', np.min(phi), np.max(phi)
-
-        # plot the error
-        #phi -= np.sin(2*np.pi*nk*np.arange(box)/box)
-        #plt.imshow((phi[:,32,:]))
-        #plt.colorbar()
-        #plt.show()
-
-    def test_phi_vox(self):
-
-        # loads, voxelizes, and computes the potential field
-        print
-        G = 1.0
-        ngrid = 3*(64,)
-        snap = 'data/snapshot_010'
-        mesh = psi.Mesh(filename=snap, loader='gadget2')
-        grid = psi.Grid(type='cart', n=ngrid, window=(mesh.boxmin, mesh.boxmax)) 
-        psi.voxels(grid=grid, mesh=mesh)
-
-        dv = np.product(grid.d)
-        mass = grid.fields['m']
-        print 'grid dx =', grid.d
-        print 'mass min, max =', np.min(mass), np.max(mass)
-        print 'rho min, max =', np.min(mass)/dv, np.max(mass)/dv
-
-        plt.imshow(np.log10(grid.fields['m'][:,32,:]))
-        plt.colorbar()
-        plt.show()
-
-        phi = psi.phi(grid, Gn=G)
-        plt.imshow((phi[:,32,:]))
-        plt.colorbar()
-        plt.show()
-
-
-# test basic Grid functionality 
-class GridTests(TestCase):
-
-    def test_grid_cart(self):
-        print
-        grid = psi.Grid(type='cart', n=(10,10,10)) # default is 64^3 unit box
-        print ' - type =', grid.type 
-        print ' - fields =', grid.fields['m'].dtype, grid.fields['m'].shape
-        print ' - window =', grid.winmin, grid.winmax
-        print ' - n =', grid.n
-        print ' - d =', grid.d
-        center, boundary, vol = grid.getCellGeometry(cell=[123])
-        #print center.shape, boundary.shape, vol.shape
-        #print center, boundary, vol
-
-    def test_grid_hpring(self):
-        print
-        grid = psi.Grid(type='hpring')
-        print ' - type =', grid.type 
-        print ' - fields =', grid.fields['m'].dtype, grid.fields['m'].shape
-        print ' - window =', grid.winmin, grid.winmax
-        print ' - n =', grid.n
-        print ' - d =', grid.d
-
-        # get a pixel boundary
-        center, boundary, vol = grid.getCellGeometry(cell=None, bstep=2)
-
-# test basic Mesh functionality 
-class MeshTests(TestCase):
-
-    def test_mesh_init(self):
-        print
-        mesh = psi.Mesh(filename='data/snapshot_010', loader='gadget2')
-        print ' - pos =', mesh.pos.dtype, mesh.pos.shape
-        print ' - vel =', mesh.vel.dtype, mesh.vel.shape
-        print ' - conn =', mesh.connectivity.dtype, mesh.connectivity.shape
-        print ' - box =', mesh.boxmin, mesh.boxmax
 
 
 ####### runs all tests by default #######

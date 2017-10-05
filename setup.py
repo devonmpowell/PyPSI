@@ -1,5 +1,5 @@
 from setuptools import setup, Extension
-import numpy.distutils.misc_util
+import numpy as np
 
 c_ext = Extension(
     name = "PSI", 
@@ -12,11 +12,12 @@ c_ext = Extension(
 )
 
 setup(
-    name = 'phase-space-intersector',
+    name = 'the-phase-space-intersector',
     version = '3.0.2',
     author = 'Devon Powell',
     author_email = 'devonmpowell1@gmail.com',
-    url = '',
+    url = '-',
     ext_modules=[c_ext],
-    include_dirs=['include']+numpy.distutils.misc_util.get_numpy_include_dirs(),
+    install_requires = ['numpy'],
+    include_dirs=['include', np.get_include()],
 )

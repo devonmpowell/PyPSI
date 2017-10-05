@@ -979,15 +979,9 @@ static PyObject *PSI_phi(PyObject *self, PyObject *args, PyObject* kwds) {
 	for(ax = 0; ax < 3; ++ax)
 		npdims[ax] = cgrid.n.ijk[ax];
 
-
-
 	// the return array
 	PyObject* retar = PyArray_ZEROS(cgrid.dim, npdims, NPY_DOUBLE, 0);
-
-	printf("Doing the FFT\n");
-
 	psi_do_phi(&cgrid, PyArray_DATA(retar), Gn);
-
 	return retar;
 }
 
@@ -1014,9 +1008,6 @@ static PyMethodDef module_methods[] = {
 
 PyMODINIT_FUNC initPSI(void) {
     PyObject* m;
-    if (PyType_Ready(&GridType) < 0)
-        return;
-
     m = Py_InitModule3("PSI", module_methods,
 	       "Example module that creates an extension type.");
     if(!m) return;

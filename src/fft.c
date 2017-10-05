@@ -87,17 +87,12 @@ void psi_do_phi(psi_grid* grid, psi_real* phi_out, psi_real Gn) {
 		dx.xyz[ax] = L.xyz[ax]/dims.ijk[ax];
 	}
 	
-	printf("  Allocating memory...\n");
-
 	rhok = (fftw_complex*) fftw_malloc(dims.i*dims.j*halfn.k*sizeof(fftw_complex));
-
-	printf("  Forward FFT of density...\n");
 	p = fftw_plan_dft_r2c_3d(dims.i, dims.j, dims.k, grid->fields[0], rhok, FFTW_ESTIMATE);
 	fftw_execute(p);
 	fftw_destroy_plan(p);
 
 	// Phi
-	printf("  Phi...\n");
 	for(int i = 0; i < dims.i; ++i) 
 	for(int j = 0; j < dims.j; ++j) 
 	for(int k = 0; k < halfn.k; ++k) {
@@ -123,8 +118,6 @@ void psi_do_phi(psi_grid* grid, psi_real* phi_out, psi_real Gn) {
 	pinv = fftw_plan_dft_c2r_3d(dims.i, dims.j, dims.k, rhok, phi_out, FFTW_ESTIMATE);
 	fftw_execute(pinv);
 	fftw_destroy_plan(pinv);
-
-	printf("  Freeing arrays...\n");
 	fftw_free(rhok);
 
 #if 0
