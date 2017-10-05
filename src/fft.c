@@ -1,5 +1,5 @@
 #ifdef HAVE_FFTW
-#include "fft.h""
+#include "fft.h"
 
 // Hybrid eigensolver routines from J. Kopp (2008)
 // http://arxiv.org/abs/physics/0610206
@@ -14,8 +14,8 @@
 //void read_hdf5(string filename, string fieldname);
 //void read_fortran(string filename);
 //void read_gadget_header(string filename);
-void do_phi();
-void do_minmax();
+//void do_phi();
+//void do_minmax();
 
 // metadata
 psi_real BoxSize; // In Mpc/h

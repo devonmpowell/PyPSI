@@ -18,6 +18,20 @@ typedef struct {
 	psi_real d;
 } psi_plane;
 
+// structure to hold a polyhedron,
+// including mass coordinates
+#define POLYSZ 64 // TODO: fix this number better. Should be 16, accd to Euler Characteristic with 10 faces
+typedef struct {
+	psi_rvec pos, q;
+	psi_short pnbrs[PSI_NDIM];
+} psi_vertex;
+typedef struct {
+	psi_int nverts;
+	psi_dvec ibox[2];
+	psi_vertex verts[POLYSZ];
+} psi_poly; 
+
+
 
 #define psi_dot3(va, vb) (va.x*vb.x + va.y*vb.y + va.z*vb.z)
 #define psi_cross3(v,u,w)          /* CROSS Vector Product */              \

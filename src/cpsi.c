@@ -22,6 +22,7 @@
 // internal top-level utilities
 void psi_aabb(psi_rvec* pos, psi_int nverts, psi_rvec* rbox);
 psi_int psi_aabb_periodic(psi_rvec* pos, psi_rvec* rbox, psi_rvec* window, psi_mesh* mesh); 
+int psi_aabb_ixn(psi_rvec* rbox0, psi_rvec* rbox1, psi_rvec* ixn);
 void psi_make_ghosts(psi_rvec* elems, psi_rvec* rboxes, psi_int* num, psi_int stride, psi_rvec* window, psi_mesh* mesh);
 
 // psi implementation 
@@ -43,10 +44,10 @@ void psi_voxels(psi_grid* grid, psi_mesh* mesh) {
 	// TODO: user-issued max level
 	psi_tet_buffer tetbuf;
 	psi_int max_lvl = 0;
+	psi_real reftol = 0.1*grid->d.x;
 	//psi_int max_lvl = 4;
 	//if(order == 0) max_lvl = 0;
-	//psi_tet_buffer_init(&tetbuf, reftol, max_lvl);
-	psi_tet_buffer_init(&tetbuf, 1000.0, max_lvl);
+	psi_tet_buffer_init(&tetbuf, reftol, max_lvl);
 
 	// loop over all elements
 	for(e = 0; e < mesh->nelem; ++e) {
@@ -472,6 +473,22 @@ void psi_aabb(psi_rvec* pos, psi_int nverts, psi_rvec* rbox) {
 		if(pos[v].xyz[i] > rbox[1].xyz[i]) rbox[1].xyz[i] = pos[v].xyz[i];
 	}
 }
+
+int psi_aabb_ixn(psi_rvec* rbox0, psi_rvec* rbox1, psi_rvec* ixn) {
+
+	// constructs the intersection bounding box
+	// returns 1 if they intersect, 0 if not
+	int i, ret;
+	for(i = 0; i < 3; ++i) {
+		ixn[0].xyz[i] = fmax(rbox0[0].xyz[i], rbox1[0].xyz[i]);
+		ixn[1].xyz[i] = fmin(rbox0[1].xyz[i], rbox1[1].xyz[i]);
+	}
+	for(i = 0, ret = 1; i < 3; ++i) {
+		ret &= (ixn[1].xyz[i] > ixn[0].xyz[i]);
+	}
+	return ret;
+}
+
 
 
 psi_int psi_aabb_periodic(psi_rvec* pos, psi_rvec* rbox, psi_rvec* window, psi_mesh* mesh) {

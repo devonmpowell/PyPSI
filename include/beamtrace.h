@@ -24,18 +24,20 @@ typedef struct {
 #define PSI_CLIGHT 1
 #define PSI_METRIC_MINKOWSKI 0
 #define PSI_METRIC_FLRW 1
+#define PSI_METRIC_KERR 2
 
 // structure to hold voxelization info
 // remains the same regardless of dimensionality
 typedef struct {
 
 	// type flags and parameters for analytic metrics
-	psi_int metric_type;
-	psi_real metric_params[4];
+	psi_int type;
+	psi_real params[4];
 
 	// these fields are used only for perturbed FLRW!
+	psi_int snapnum;
 	psi_dvec n;
-	psi_rvec box[2];
+	psi_rvec box;
 	psi_real* phi;
 	psi_real* gradphi;
 } psi_metric;
@@ -44,7 +46,7 @@ typedef struct {
 
 
 
-void psi_beamtrace(psi_grid* grid, psi_mesh* mesh, psi_int bstep, psi_int metric, psi_real* outar, psi_dvec ardim);
+void psi_beamtrace(psi_grid* grid, psi_mesh* mesh, psi_int bstep, psi_metric* metric, psi_real* outar, psi_dvec ardim);
 
 
 

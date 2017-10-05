@@ -5,81 +5,86 @@
 // traces beams as defined by the grb_params passed in
 void psi_skymap(psi_grid* grid, psi_mesh* mesh, psi_int bstep, psi_int mode) {
 
-	psi_int p, b, ax, e, v, tind, t; 
+	psi_int p, b, ax, v, tind, t, e0, e1, t0, t1, m; 
 	psi_dvec grind;
 	psi_real vol;
 	psi_real moments[10];
 	psi_real vertweights[4];
 	psi_rvec corners[64], center, brbox[2];
-	psi_rvec gpos[mesh->dim+1], grbox[2];
+	psi_rvec gpos[mesh->dim+1], grbox[2], gpos0[mesh->dim+1], gpos1[mesh->dim+1], grbox0[2], grbox1[2], gvel0[mesh->dim+1], gvel1[mesh->dim+1];
 	psi_int vpere = mesh->elemtype;
 	psi_plane beamfaces[16];
-	psi_tet_buffer tetbuf;
+	psi_tet_buffer tetbuf0, tetbuf1;
+
+								psi_poly curpoly, tpoly;
+									psi_plane tetfaces[4];
 
 	psi_rvec rawverts[3]; 
 	psi_rvec beamverts[6];
 
-	psi_rvec tpos[vpere], tvel[vpere], trbox[2];
-	psi_real tmass;
+	psi_rvec tpos0[vpere], tvel0[vpere], trbox0[2], erbox0[2], erbox1[2], qbox0[2], qbox1[2], qbox2[2], qbox3[2];
+	psi_rvec tpos1[vpere], tvel1[vpere], trbox1[2];
+	psi_real tmass0, tmass1;
 
 	if(grid->type != PSI_GRID_HPRING)
 		return;
 
+	psi_int nfail = 0;
+
 	psi_rvec obspos = {{20.,20.,20.}};
+	//psi_rvec obspos = {{0.,0.,0.}};
 
 	psi_real mtot = 0.0;
 
 	// First, build an rtree to get logN spatial queries
 	psi_rtree rtree;
-	psi_rtree_query qry;	
+	psi_rtree_query qry0, qry1;	
 	psi_rtree_init(&rtree, 2*mesh->nelem);
-	for(e = 0; e < mesh->nelem; ++e) {
+	for(e0 = 0; e0 < mesh->nelem; ++e0) {
 		// make it periodic, get its bounding box, and check it against the grid
 		for(v = 0; v < vpere; ++v) {
-			tpos[v] = mesh->pos[mesh->connectivity[e*vpere+v]];
-			mtot += (1.0/vpere)*mesh->mass[mesh->connectivity[e*vpere+v]];
+			tpos0[v] = mesh->pos[mesh->connectivity[e0*vpere+v]];
+			mtot += (1.0/vpere)*mesh->mass[mesh->connectivity[e0*vpere+v]];
 		}
 
 		// TODO: mesh->box may not exist for nonperiodic meshes!!!
-		if(!psi_aabb_periodic(tpos, trbox, mesh->box, mesh)) continue;
+		if(!psi_aabb_periodic(tpos0, trbox0, mesh->box, mesh)) continue;
 		for(ax = 0; ax < 3; ++ax) {
-			trbox[0].xyz[ax] -= obspos.xyz[ax];
-			trbox[1].xyz[ax] -= obspos.xyz[ax];
+			trbox0[0].xyz[ax] -= obspos.xyz[ax];
+			trbox0[1].xyz[ax] -= obspos.xyz[ax];
 		}
 		// insert each element into the tree
-		psi_rtree_insert(&rtree, trbox, e);
+		psi_rtree_insert(&rtree, trbox0, e0);
 	}
-	//psi_tet_buffer_init(&tetbuf, 1000.0, 0);
-	psi_tet_buffer_init(&tetbuf, 1.0, 4);
+	psi_tet_buffer_init(&tetbuf0, 1000.0, 0);
+	psi_tet_buffer_init(&tetbuf1, 1000.0, 0);
+	//psi_tet_buffer_init(&tetbuf0, 1.0, 4);
+	//psi_tet_buffer_init(&tetbuf1, 1.0, 4);
 
+	/// RTREE test
+	// see whether all bound boxes completely contain their children
+	//psi_rtree_print(stdout, &rtree);
 	printf("Total mass loaded = %.5e\n", mtot);
-
 	/// TODO: test
 	mtot = 0.0;
 	for(ax = 0; ax < 3; ++ax) {
 		brbox[0].xyz[ax] = mesh->box[0].xyz[ax] - obspos.xyz[ax]; 
 		brbox[1].xyz[ax] = mesh->box[1].xyz[ax] - obspos.xyz[ax]; 
 	}
-	psi_rtree_query_init(&qry, &rtree, brbox);
-	while(psi_rtree_query_next(&qry, &e)) {
-		tmass = 0.0;
+	psi_rtree_query_init(&qry0, &rtree, brbox);
+	while(psi_rtree_query_next(&qry0, &e0)) {
+		tmass0 = 0.0;
 		for(v = 0; v < vpere; ++v) {
-			tind = mesh->connectivity[e*vpere+v];
-			tmass += (1.0/vpere)*mesh->mass[tind]; 
+			tind = mesh->connectivity[e0*vpere+v];
+			tmass0 += (1.0/vpere)*mesh->mass[tind]; 
 		}
-		mtot += tmass;
+		mtot += tmass0;
 	}
 	printf("Total mass queried = %.5e\n", mtot);
 
-	/// RTREE test
-	// see whether all bound boxes completely contain their children
-	//psi_rtree_print(stdout, &rtree);
-
 	psi_real omtot = 0.0;
-	
 	psi_int* elemmarks = psi_malloc(mesh->nelem*sizeof(psi_int));
 	memset(elemmarks, 0, mesh->nelem*sizeof(psi_int));
-
 	mtot = 0.0;
 
 	// for every pixel in the image...
@@ -90,7 +95,6 @@ void psi_skymap(psi_grid* grid, psi_mesh* mesh, psi_int bstep, psi_int mode) {
 		// this depends on the pixelization scheme given by grbp
 		grind.i = p;
 		if(!psi_grid_get_cell_geometry(grid, grind, bstep, corners, &center, &vol)) {
-		
 			printf("Bad cell geometry!\n");
 			continue;
 		} 
@@ -106,37 +110,32 @@ void psi_skymap(psi_grid* grid, psi_mesh* mesh, psi_int bstep, psi_int mode) {
 				rawverts[2].xyz[ax] = center.xyz[ax]; 
 			}
 	
-			// TODO: rotate/transform/boost the beam position to the source
-			psi_real domega = psi_omega3(rawverts[0], rawverts[1], rawverts[2]);
-			if(domega <= 0.0)
-				printf("Bad domega!!!!\n");
+			//psi_real rmin = 10.0;
+			//psi_real rmax = 10.0 + 0.001;
+			//psi_real rstep = .001001; 
+			
 
-			omtot += domega;
-	
-			psi_real rmin = 15.0;
-			psi_real rmax = 15.0 + 0.001;
-			psi_real rstep = .001001; 
+			psi_real rmin = 0.0; 
+			psi_real rmax = 100.0; 
+			psi_real rstep = 1.0; 
+			
 			psi_real rold = rmin;
 			psi_real rnew;
 			while(rold < rmax) {
-				rnew = rold+rstep;
 
 				// find the bounding box and query all elements that
 				// may intersect it
-				for(v = 0; v < 3; ++v) 
-				for(ax = 0; ax < 3; ++ax) {
-					beamverts[v+0].xyz[ax] = rold*rawverts[v].xyz[ax];
-					beamverts[v+3].xyz[ax] = rnew*rawverts[v].xyz[ax];
+				rnew = rold+rstep;
+				for(v = 0; v < 3; ++v) {
+					for(ax = 0; ax < 3; ++ax) {
+						beamverts[v+0].xyz[ax] = rold*rawverts[v].xyz[ax];
+						beamverts[v+3].xyz[ax] = rnew*rawverts[v].xyz[ax];
+					} 
 				} 
 				psi_aabb(beamverts, 6, brbox);
 
-				/// TODO: test
-				//for(ax = 0; ax < 3; ++ax) {
-					//brbox[0].xyz[ax] -= 10.0;
-					//brbox[1].xyz[ax] += 10.0;
-				//}
-
-				// get the beam faces
+				// create the beam faces
+				// TODO: can we do this outside of the loop???
 				for(v = 0; v < 3; ++v) {
 					psi_cross3(beamfaces[v].n, rawverts[v], rawverts[(v+1)%3]);
 					beamfaces[v].d = 0.0; 
@@ -155,54 +154,55 @@ void psi_skymap(psi_grid* grid, psi_mesh* mesh, psi_int bstep, psi_int mode) {
 				psi_cross3(beamfaces[4].n, tmp1, tmp0); 
 				beamfaces[4].d = -psi_dot3(beamfaces[4].n, beamverts[5]);
 
+				// use the r*-tree to query all elements that might
+				// intersect the beam segment's aabb
+				psi_rtree_query_init(&qry0, &rtree, brbox);
+				while(psi_rtree_query_next(&qry0, &e0)) {
 
-				psi_rtree_query_init(&qry, &rtree, brbox);
-				while(psi_rtree_query_next(&qry, &e)) {
-
-					psi_real ttmass = 0.0;
-					elemmarks[e] = 1;
-
-					tmass = 0.0;
+					// load the element pos, vel, mass 
+					// refine elements into a buffer of linear tets 
+					elemmarks[e0] = 1;
+					tmass0 = 0.0;
 					for(v = 0; v < vpere; ++v) {
-						tind = mesh->connectivity[e*vpere+v];
-						tpos[v] = mesh->pos[tind];
+						tind = mesh->connectivity[e0*vpere+v];
+						tpos0[v] = mesh->pos[tind];
 						for(ax = 0; ax < 3; ++ax)
-							tpos[v].xyz[ax] -= obspos.xyz[ax];
-						tvel[v] = mesh->vel[tind];
-						tmass += (1.0/vpere)*mesh->mass[tind]; // TODO: hack
+							tpos0[v].xyz[ax] -= obspos.xyz[ax];
+						tvel0[v] = mesh->vel[tind];
+						tmass0 += (1.0/vpere)*mesh->mass[tind]; // TODO: hack
 					}
+					psi_tet_buffer_refine(&tetbuf0, tpos0, tvel0, tmass0, mesh->elemtype);
 
-					// refine elements into the tet buffer 
-					// loop over each tet in the buffer
-					psi_tet_buffer_refine(&tetbuf, tpos, tvel, tmass, mesh->elemtype);
-					for(t = 0; t < tetbuf.num; ++t) {
+					// linear skymaps
+					// signal proportional to the density
+					if(mode == PSI_SKYMAP_RHO_LINEAR) {
 
-						ttmass += tetbuf.mass[t]; 
-			
-						// copy the position to the ghost array and compute its aabb
-						memcpy(gpos, &tetbuf.pos[(mesh->dim+1)*t], (mesh->dim+1)*sizeof(psi_rvec));
-						psi_aabb(gpos, mesh->dim+1, grbox);
-
-						if(mode == PSI_SKYMAP_RHO_LINEAR) {
-
-							// TODO: check the boxes before clipping....
-							psi_clip_reduce_tet(gpos, beamfaces, 5, moments);
-							if(moments[0] <= 0.0) {
-								//if(moments[0] < 0.0)
-									//psi_printf("Moments < 0 ! %.5e\n", moments[0]);
+						// loop over all linear tets in the refinement buffer
+						for(t = 0; t < tetbuf0.num; ++t) {
+				
+							// copy the position to the ghost array and compute its aabb
+							// skip if the aabb does not intersect the beam
+							memcpy(gpos, &tetbuf0.pos[(mesh->dim+1)*t], (mesh->dim+1)*sizeof(psi_rvec));
+							psi_aabb(gpos, mesh->dim+1, grbox);
+							if(!psi_aabb_ixn(brbox, grbox, qbox2))
 								continue;
-							} 
-	
+
+							// clip and reduce the tet against the beam
+							// skip if there is zero mass left
+							psi_init_tet(&curpoly, gpos);
+							psi_clip(&curpoly, beamfaces, 5);
+							psi_reduce(&curpoly, moments, 1, 0);
+							if(moments[0] <= 0.0) continue;
 	
 							// set up the vertex weights,
 							// depending on the specified weight scheme
 							for(v = 0; v < 4; ++v) {
-	
+
 								// mass-weighted for debugging
-								vertweights[v] = tetbuf.mass[t]; 
+								vertweights[v] = tetbuf0.mass[t]; 
 	
 								// inverse r^2, gpos is already relative to the observer position
-								//vertweights[v] = tetbuf.mass[t]/(gpos[v].x*gpos[v].x+gpos[v].y*gpos[v].y+gpos[v].z*gpos[v].z); 
+								//vertweights[v] = tetbuf0.mass[t]/(gpos[v].x*gpos[v].x+gpos[v].y*gpos[v].y+gpos[v].z*gpos[v].z); 
 							}
 	
 							// subtract. Now moments[0->3] contain barycentric moments,
@@ -213,69 +213,131 @@ void psi_skymap(psi_grid* grid, psi_mesh* mesh, psi_int bstep, psi_int mode) {
 								grid->fields[0][p] += vertweights[v]*moments[v]; 
 								mtot += vertweights[v]*moments[v]; 
 							}					
-						
 						}
+					}
 
+					// quadratic skymaps
+					// signal proportional to the squared density
+					else if(mode == PSI_SKYMAP_RHO_SQUARED) {
 
-						else if(mode == PSI_SKYMAP_RHO_SQUARED) {
+						// get the element's aabb, find its intersection with the beams's aabb
+						// then make a new query box out of the intersection
+						psi_aabb(tpos0, vpere, erbox0);
+						if(!psi_aabb_ixn(brbox, erbox0, qbox0))
+							continue;
 
-							//printf(" tet grbox = %f %f %f to %f %f %f \n", grbox[0].x, grbox[0].y, grbox[0].z, grbox[1].x, grbox[1].y, grbox[1].z);
+						// query elements close to both the beam and e0
+						psi_rtree_query_init(&qry1, &rtree, qbox0);
+						while(psi_rtree_query_next(&qry1, &e1)) {
 
-							// make a new query to find elements close to this one
-							psi_int e1;
-							psi_rtree_query qry1;
-							psi_rtree_query_init(&qry1, &rtree, grbox);
-							while(psi_rtree_query_next(&qry1, &e1)) {
-
-								printf("Found possibly overlapping elements!\n");
-
-
+							tmass1 = 0.0;
+							for(v = 0; v < vpere; ++v) {
+								tind = mesh->connectivity[e1*vpere+v];
+								tpos1[v] = mesh->pos[tind];
+								for(ax = 0; ax < 3; ++ax)
+									tpos1[v].xyz[ax] -= obspos.xyz[ax];
+								tvel1[v] = mesh->vel[tind];
+								tmass1 += (1.0/vpere)*mesh->mass[tind]; // TODO: hack
 							}
 
-
-#if 0
-
-							// TODO: check the boxes before clipping....
-							psi_clip_reduce_tet(gpos, beamfaces, 5, moments);
-							if(moments[0] <= 0.0) {
-								//if(moments[0] < 0.0)
-									//psi_printf("Moments < 0 ! %.5e\n", moments[0]);
+							// get the element's aabb, find its intersection with the beams's aabb
+							// then make a new query box out of the intersection
+							psi_aabb(tpos1, vpere, erbox1);
+							if(!psi_aabb_ixn(qbox0, erbox1, qbox1)) 
 								continue;
-							} 
+
+							// refine the second element now
+							// and loop over pairs of linear tets (this bit is n^2)
+							psi_tet_buffer_refine(&tetbuf1, tpos1, tvel1, tmass1, mesh->elemtype);
+							for(t0 = 0; t0 < tetbuf0.num; ++t0) {
 	
-	
-							// set up the vertex weights,
-							// depending on the specified weight scheme
-							for(v = 0; v < 4; ++v) {
-	
-								// mass-weighted for debugging
-								vertweights[v] = tetbuf.mass[t]; 
-	
-								// inverse r^2, gpos is already relative to the observer position
-								//vertweights[v] = tetbuf.mass[t]/(gpos[v].x*gpos[v].x+gpos[v].y*gpos[v].y+gpos[v].z*gpos[v].z); 
-							}
-	
-							// subtract. Now moments[0->3] contain barycentric moments,
-							// properly weighted wrt the original tet vertices
-							// add the mass to the grid, linearly interpolating the vertex weights 
-							moments[0] -= (moments[1]+moments[2]+moments[3]); 
-							for(v = 0; v < 4; ++v) {
-								grid->fields[0][p] += vertweights[v]*moments[v]; 
-								mtot += vertweights[v]*moments[v]; 
-							}		
-#endif			
+								// copy the position to the ghost array and compute its aabb
+								memcpy(gpos0, &tetbuf0.pos[(mesh->dim+1)*t0], (mesh->dim+1)*sizeof(psi_rvec));
+								memcpy(gvel0, &tetbuf0.vel[(mesh->dim+1)*t0], (mesh->dim+1)*sizeof(psi_rvec));
+								psi_real mass0 = tetbuf0.mass[t0];
+								psi_aabb(gpos0, mesh->dim+1, grbox0);
+								if(!psi_aabb_ixn(qbox1, grbox0, qbox2))
+									continue;
+
+								// initialize tet0 and clip it against the beam segment
+								psi_init_tet(&curpoly, gpos0);
+								psi_clip(&curpoly, beamfaces, 5);
+								if(curpoly.nverts <= 0) continue;
+								tpoly = curpoly;
 						
+								// loop over all tets in buffer 1
+								for(t1 = 0; t1 < tetbuf1.num; ++t1) {
+
+									// copy the position to the ghost array and compute its aabb
+									memcpy(gpos1, &tetbuf1.pos[(mesh->dim+1)*t1], (mesh->dim+1)*sizeof(psi_rvec));
+									memcpy(gvel1, &tetbuf1.vel[(mesh->dim+1)*t1], (mesh->dim+1)*sizeof(psi_rvec));
+									psi_real mass1 = tetbuf1.mass[t1];
+									psi_aabb(gpos1, mesh->dim+1, grbox1);
+									if(!psi_aabb_ixn(qbox2, grbox1, qbox3))
+										continue;
+
+									// get the volume and correctly orient the tets
+									// TODO: volume for degenerate tets?
+
+									// TODO: why didn't this function work????
+									//psi_real vol1 = psi_orient_tet(gpos1, gvel1);
+									psi_real adx = gpos1[0].x - gpos1[3].x;
+									psi_real bdx = gpos1[1].x - gpos1[3].x;
+									psi_real cdx = gpos1[2].x - gpos1[3].x;
+									psi_real ady = gpos1[0].y - gpos1[3].y;
+									psi_real bdy = gpos1[1].y - gpos1[3].y;
+									psi_real cdy = gpos1[2].y - gpos1[3].y;
+									psi_real adz = gpos1[0].z - gpos1[3].z;
+									psi_real bdz = gpos1[1].z - gpos1[3].z;
+									psi_real cdz = gpos1[2].z - gpos1[3].z;
+									psi_real vol1 = -0.16666666666666666*(adx*(bdy*cdz-bdz*cdy)
+											+bdx*(cdy*adz-cdz*ady)+cdx*(ady*bdz-adz*bdy));
+									if(vol1 < 0.0) { // swap two vertices if the vol1ume is negative
+										psi_rvec swp = gpos1[0]; gpos1[0] = gpos1[1]; gpos1[1] = swp;
+										swp = gvel1[0]; gvel1[0] = gvel1[1]; gvel1[1] = swp;
+										vol1 *= -1;
+									}
+									if(vol1 <= 0.0) continue; // TODO: treat degenerate tets better!!!
+									psi_real rho1 = mass1/vol1; 
+
+
+
+									
+									// clip the tet
+									psi_tet_faces_from_verts(tetfaces, gpos1); // TODO: make all of these planes up front
+									curpoly = tpoly;
+									psi_clip(&curpoly, tetfaces, 4);
+									psi_reduce(&curpoly, moments, 1, 0);
+									if(moments[0] <= 0.0) continue;
+
+									// set up the vertex weights,
+									// depending on the specified weight scheme
+									for(v = 0; v < 4; ++v) {
+										// mass-weighted for debugging
+										// TODO: different factor for the same element??
+										vertweights[v] = 0.5*mass0*rho1;
+										// inverse r^2, gpos is already relative to the observer position
+										//vertweights[v] = tetbuf0.mass[t]/(gpos[v].x*gpos[v].x+gpos[v].y*gpos[v].y+gpos[v].z*gpos[v].z); 
+									}
+			
+									// subtract. Now moments[0->3] contain barycentric moments,
+									// properly weighted wrt the original tet vertices
+									// add the mass to the grid, linearly interpolating the vertex weights 
+									moments[0] -= (moments[1]+moments[2]+moments[3]); 
+									for(v = 0; v < 4; ++v) {
+										grid->fields[0][p] += vertweights[v]*moments[v]; 
+										mtot += vertweights[v]*moments[v]; 
+									}		
+								}
+							}
 						}
-
-
-
 					}
 				}
 				rold = rnew;
 			}
 		}
 
-		if(p%512==0)
+		if(p%16==0)
 			psi_printf("\rPixel %d of %d, %.1f%%", p, grid->n.k, (100.0*p)/grid->n.k);
 	}
 
@@ -283,6 +345,7 @@ void psi_skymap(psi_grid* grid, psi_mesh* mesh, psi_int bstep, psi_int mode) {
 
 	printf("Total mass mapped = %.5e\n", mtot);
 	printf("Omtot/4pi-1 = %.5e\n", omtot/(FOUR_PI)-1.0);
+	printf("Num. failed queries = %d\n", nfail);
 
 	// make sure all elements were used...
 	//for(e = 0; e < mesh->nelem; ++e) {
@@ -290,29 +353,6 @@ void psi_skymap(psi_grid* grid, psi_mesh* mesh, psi_int bstep, psi_int mode) {
 		//printf(" Element %d was never used !!!---!!!\n", e);
 	//}
 	psi_free(elemmarks);
-
-#if 0
-		// refine elements into the tet buffer 
-		// loop over each tet in the buffer
-		psi_tet_buffer_refine(&tetbuf, tpos, tvel, tmass, mesh->elemtype);
-		for(t = 0; t < tetbuf.num; ++t) {
-
-			// copy the position to the ghost array and compute its aabb
-			memcpy(gpos, &tetbuf.pos[(mesh->dim+1)*t], (mesh->dim+1)*sizeof(psi_rvec));
-			psi_aabb(gpos, mesh->dim+1,grbox);
-
-			// make ghosts and sample tets to the grid
-			psi_make_ghosts(gpos, grbox, &nghosts, (mesh->dim+1), grid->window, mesh);
-			for(g = 0; g < nghosts; ++g) {
-				psi_rvec* curtet = &gpos[(mesh->dim+1)*g];
-				//if(grid->sampling == PSI_SAMPLING_VOLUME)
-					psi_voxelize_tet(&gpos[(mesh->dim+1)*g], &tetbuf.vel[(mesh->dim+1)*t], tetbuf.mass[t], &grbox[2*g], grid);
-				//else if(grid->sampling == PSI_SAMPLING_POINT)
-					//psi_point_sample_tet(&gpos[(mesh->dim+1)*g], &tetbuf.vel[(mesh->dim+1)*t], tetbuf.mass[t], &grbox[2*g], grid);
-			}
-		}
-#endif
-
 
 	// if we are in healpix, solve for the correction factors
 	// that make it truly equal-area

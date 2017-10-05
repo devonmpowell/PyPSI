@@ -72,6 +72,7 @@ int load_gadget2(psi_mesh* mesh, const char* filename) {
 
 	int blksize, p, e, nside, ii, jj, kk, i, j, k;
 	int elemind, locind, vertind;
+	int load_mass;
 	gadget2header header;
 	psi_printf("Loading %s...\n", filename);
 	FILE* f = fopen(filename, "r");
@@ -86,6 +87,7 @@ int load_gadget2(psi_mesh* mesh, const char* filename) {
 	// allocate mesh storage
 	mesh->npart = header.npart[1]; 
 	mesh->nelem = header.npart[1]; 
+	load_mass = (header.mass[1] == 0);
 	mesh->periodic = 1;
 	mesh->elemtype = PSI_MESH_LINEAR;
 	mesh->dim = 3; 
@@ -98,6 +100,8 @@ int load_gadget2(psi_mesh* mesh, const char* filename) {
 	int* tid = (int*) psi_malloc(mesh->npart*sizeof(psi_int));
 
 	printf("Hubble = %f\n", header.HubbleParam);
+	printf("Box = %f\n", header.BoxSize);
+	printf("load_mass = %d, mass = %f\n", load_mass, header.mass[1]);
 	
 	// read in position data
 	e = fread(&blksize, sizeof(int), 1, f);
@@ -132,7 +136,7 @@ int load_gadget2(psi_mesh* mesh, const char* filename) {
 		mesh->vel[tid[p]].x = tvel[3*p+0];
 		mesh->vel[tid[p]].y = tvel[3*p+1];
 		mesh->vel[tid[p]].z = tvel[3*p+2];
-		mesh->mass[tid[p]] = 1.0/mesh->npart;
+		mesh->mass[tid[p]] = header.mass[1]/mesh->npart;
 	}
 
 	psi_free(tpos);

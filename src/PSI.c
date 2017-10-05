@@ -32,6 +32,16 @@ typedef struct {
 	PyObject* d; // tuple of dx in each dimension
 } Grid;
 
+typedef struct {
+    PyObject_HEAD
+	PyObject* type; // string representation of the grid type 
+	PyObject* params; // tuple of floats -- parameters for analytic metrics 
+	PyObject* n; // number of cells in each dimension
+	PyObject* box; // box size 
+	PyObject* phi; // numpy array - potential 
+	PyObject* gradphi; // numpy array - gradient of the potential 
+} Metric;
+
 static void PSI_Mesh2mesh(Mesh* mesh, psi_mesh* cmesh) {
 
 	// parse a simple C struct from a Python object 
@@ -72,8 +82,6 @@ static void PSI_Mesh2mesh(Mesh* mesh, psi_mesh* cmesh) {
 	cmesh->connectivity = PyArray_DATA((PyArrayObject*)mesh->connectivity);
 
 }
-
-
 
 static void PSI_Grid2grid(Grid* grid, psi_grid* cgrid) {
 
@@ -121,6 +129,42 @@ static void PSI_Grid2grid(Grid* grid, psi_grid* cgrid) {
 	// temporary, just to get the mass array
 	cgrid->fields[0] = (psi_real*)PyArray_DATA((PyArrayObject*)PyDict_GetItemString(grid->fields, "m"));
 }
+
+static void PSI_Metric2metric(Metric* metric, psi_metric* cmetric) {
+
+
+	// parse a simple C struct from a Python object 
+	psi_int ax;
+	PyObject* seq;
+	char* cstr;
+
+
+	// clear everything first
+	memset(cmetric, 0, sizeof(psi_metric));
+	cmetric->snapnum = -1;
+   
+	// get the enum metric type
+	cstr = PyString_AsString(metric->type);
+	printf("Metric type = %s\n", cstr);
+
+	if(strcmp(cstr, "minkowski") == 0) {
+		printf("Chose the Minkowski metric!\n");
+		cmetric->type = PSI_METRIC_MINKOWSKI; 
+	}
+	else if(strcmp(cstr, "flrw") == 0) {
+		printf("Chose the FLRW metric!\n");
+		cmetric->type = PSI_METRIC_FLRW; 
+	}
+	else if(strcmp(cstr, "kerr") == 0) {
+		printf("Chose the KERR metric!\n");
+		cmetric->type = PSI_METRIC_KERR; 
+	}
+	else {
+		psi_printf("Invalid metric\n");
+		Py_RETURN_NONE;
+	}
+}
+
 
 
 /////////////////////////////////////////////////////////////
@@ -187,8 +231,8 @@ static int Mesh_init(Mesh *self, PyObject *args, PyObject *kwds) {
 		psi_printf("Using the hacked test vertices.\n");
 
 		// set up the cmesh...
-		cmesh.npart = 4; 
-		cmesh.nelem = 1; 
+		cmesh.npart = 8; 
+		cmesh.nelem = 2; 
 		cmesh.periodic = 1;
 		cmesh.elemtype = PSI_MESH_SIMPLEX;
 		cmesh.dim = 3; 
@@ -229,22 +273,42 @@ static int Mesh_init(Mesh *self, PyObject *args, PyObject *kwds) {
 		cmesh.mass[1] = 1.0;
 		cmesh.mass[2] = 1.0;
 		cmesh.mass[3] = 1.0;
-		cmesh.pos[0].x = 17.0-40;
-		cmesh.pos[0].y = 17.0-40;
-		cmesh.pos[0].z = 17.0-40;
-		cmesh.pos[1].x = 29.0-40;
-		cmesh.pos[1].y = 17.0-40;
-		cmesh.pos[1].z = 17.0-40;
-		cmesh.pos[2].x = 17.0-40;
-		cmesh.pos[2].y = 29.0-40;
-		cmesh.pos[2].z = 17.0-40;
-		cmesh.pos[3].x = 17.0-40;
-		cmesh.pos[3].y = 17.0-40;
-		cmesh.pos[3].z = 29.0-40;
+		cmesh.mass[4] = 1.0;
+		cmesh.mass[5] = 1.0;
+		cmesh.mass[6] = 1.0;
+		cmesh.mass[7] = 1.0;
+		cmesh.pos[0].x = 17.0;
+		cmesh.pos[0].y = 17.0;
+		cmesh.pos[0].z = 17.0;
+		cmesh.pos[1].x = 29.0;
+		cmesh.pos[1].y = 17.0;
+		cmesh.pos[1].z = 17.0;
+		cmesh.pos[2].x = 17.0;
+		cmesh.pos[2].y = 29.0;
+		cmesh.pos[2].z = 17.0;
+		cmesh.pos[3].x = 17.0;
+		cmesh.pos[3].y = 17.0;
+		cmesh.pos[3].z = 29.0;
+		cmesh.pos[4].x = 25.0;
+		cmesh.pos[4].y = 25.0;
+		cmesh.pos[4].z = 25.0;
+		cmesh.pos[5].x = 9.0;
+		cmesh.pos[5].y = 25.0;
+		cmesh.pos[5].z = 25.0;
+		cmesh.pos[6].x = 25.0;
+		cmesh.pos[6].y = 9.0;
+		cmesh.pos[6].z = 25.0;
+		cmesh.pos[7].x = 25.0;
+		cmesh.pos[7].y = 25.0;
+		cmesh.pos[7].z = 9.0;
 		cmesh.connectivity[0] = 0;
 		cmesh.connectivity[1] = 1;
 		cmesh.connectivity[2] = 2;
 		cmesh.connectivity[3] = 3;
+		cmesh.connectivity[4] = 4;
+		cmesh.connectivity[5] = 5;
+		cmesh.connectivity[6] = 6;
+		cmesh.connectivity[7] = 7;
 
 	}
 
@@ -592,6 +656,187 @@ static PyTypeObject GridType = {
     Grid_new,                 /* tp_new */
 };
 
+/////////////////////////////////////////////////////////////
+//     Metric
+/////////////////////////////////////////////////////////////
+
+static int Metric_init(Metric *self, PyObject *args, PyObject *kwds) {
+
+	printf("Init metric\n");
+
+	psi_int ax, dim, order, nside, npix;
+	psi_metric cmetric;
+	char* type;
+	npy_intp npdims[3];
+	PyObject* pytype, *params, *filepat;
+	static char *flrwkw[] = {"type", "params", "filepattern", NULL};
+	static char *kerrkw[] = {"type", NULL};
+	static char *minkkw[] = {"type", NULL};
+
+	// default is 0 (Minkowski) 
+	memset(npdims, 0, sizeof(npdims));
+	memset(&cmetric, 0, sizeof(cmetric));
+
+	// peek at the metric type before parsing args
+	type = PyString_AsString(PyDict_GetItemString(kwds, "type"));
+	//if(strcmp(type, "flrw") == 0) {
+		////self->type = 
+		//printf("Flrw selected\n");		
+	//}
+
+	if(strcmp(type, "minkowski") == 0 &&
+			PyArg_ParseTupleAndKeywords(args, kwds, "S", minkkw, &pytype)) {
+		self->type = pytype;
+		printf("Minkowski selected, %s\n", PyString_AsString(pytype));		
+	}
+	if(strcmp(type, "kerr") == 0 &&
+			PyArg_ParseTupleAndKeywords(args, kwds, "S", kerrkw, &pytype)) {
+		self->type = pytype;
+		printf("Kerr selected, %s\n", PyString_AsString(pytype));		
+	}
+	else if(strcmp(type, "flrw") == 0 &&
+			PyArg_ParseTupleAndKeywords(args, kwds, "S|OS", flrwkw, &pytype, &params, &filepat)) {
+		self->type = pytype;
+		printf("FLRW selected, %s\n", PyString_AsString(pytype));		
+	}
+	else {
+	
+		printf("Bad metric!!!!\n");
+		return -1;
+	}
+
+#if 0
+
+	// parse arguments differently depending on what the metric type is
+	// certain metric types must correspond to certain arg patterns
+	if(strcmp(type, "flrw") == 0 && 
+			PyArg_ParseTupleAndKeywords(args, kwds, "S|((ddd)(ddd))(iii)", kwlist, // for cart 
+			&pytype, &cmetric.window[0].x, &cmetric.window[0].y, &cmetric.window[0].z, 
+			&cmetric.window[1].x, &cmetric.window[1].y, &cmetric.window[1].z, &cmetric.n.i, &cmetric.n.j, &cmetric.n.k)) {
+
+		// fill in all metric information as Python tuples
+		self->type = pytype; 
+		self->winmin = Py_BuildValue("(ddd)", cmetric.window[0].x, cmetric.window[0].y, cmetric.window[0].z); 
+		self->winmax = Py_BuildValue("(ddd)", cmetric.window[1].x, cmetric.window[1].y, cmetric.window[1].z); 
+		self->n = Py_BuildValue("(iii)", cmetric.n.i, cmetric.n.j, cmetric.n.k); 
+		self->d = Py_BuildValue("(ddd)", (cmetric.window[1].x-cmetric.window[0].x)/cmetric.n.i, (cmetric.window[1].y-cmetric.window[0].y)/cmetric.n.j, (cmetric.window[1].z-cmetric.window[0].z)/cmetric.n.k); 
+		npdims[0] = cmetric.n.i;
+		npdims[1] = cmetric.n.j;
+		npdims[2] = cmetric.n.k;
+		dim = 3;
+		Py_XDECREF(pytype);
+	}
+	else if(strcmp(type, "hpring") == 0 && 
+			PyArg_ParseTupleAndKeywords(args, kwds, "S|i", kwlist_hpring, &pytype, &cmetric.n.i)) {
+
+		// for Healpix store n as (order, nside, npix)
+		self->type = pytype; 
+		order = floor(log2(cmetric.n.i+0.5));
+		nside = (1<<order);
+		npix = 12*nside*nside;
+		self->n = Py_BuildValue("(iii)", order, nside, npix); 
+		self->d = Py_BuildValue("d", FOUR_PI/npix); // the nominal pixel area 
+		self->winmin = MAKE_PY_NONE;
+		self->winmax = MAKE_PY_NONE;
+		npdims[0] = npix;
+		dim = 1;
+		Py_XDECREF(pytype);
+	}
+	else {
+		return -1;
+	}
+
+	// make the fields dict
+	// now allocate numpy storage
+	self->fields = PyDict_New();
+	PyDict_SetItemString(self->fields, "m", PyArray_ZEROS(dim, npdims, NPY_DOUBLE, 0));
+
+#endif
+    return 0;
+}
+
+static PyObject* Metric_new(PyTypeObject *type, PyObject *args, PyObject *kwds) {
+    Metric *self;
+    self = (Metric*)type->tp_alloc(type, 0);
+    return (PyObject *)self;
+}
+
+static void Metric_dealloc(Metric* self) {
+    Py_XDECREF(self->type);
+    Py_XDECREF(self->params);
+    Py_XDECREF(self->n);
+    Py_XDECREF(self->box);
+    Py_XDECREF(self->phi);
+    Py_XDECREF(self->gradphi);
+    Py_TYPE(self)->tp_free((PyObject*)self);
+}
+
+static PyMemberDef Metric_members[] = {
+    {"type", T_OBJECT, offsetof(Metric, type), 0,
+     "type"},
+    {"params", T_OBJECT, offsetof(Metric, params), 0,
+     "params"},
+    {"n", T_OBJECT, offsetof(Metric, n), 0,
+     "n"},
+    {"box", T_OBJECT, offsetof(Metric, box), 0,
+     "box"},
+    {"phi", T_OBJECT, offsetof(Metric, phi), 0,
+     "potential"},
+    {"gradphi", T_OBJECT, offsetof(Metric, gradphi), 0,
+     "potential gradient"},
+    {NULL}  /* Sentinel */
+};
+
+static PyMethodDef Metric_methods[] = {
+	//{"getCellGeometry", (PyCFunction)Metric_getCellGeometry, METH_KEYWORDS,
+	 //"Get the vertices for the given cell."},
+    {NULL}  /* Sentinel */
+};
+
+static PyTypeObject MetricType = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    "PSI.Metric",             /* tp_name */
+    sizeof(Metric),             /* tp_basicsize */
+    0,                         /* tp_itemsize */
+    (destructor)Metric_dealloc, /* tp_dealloc */
+    0,                         /* tp_print */
+    0,                         /* tp_getattr */
+    0,                         /* tp_setattr */
+    0,                         /* tp_compare */
+    0,                         /* tp_repr */
+    0,                         /* tp_as_number */
+    0,                         /* tp_as_sequence */
+    0,                         /* tp_as_mapping */
+    0,                         /* tp_hash */
+    0,                         /* tp_call */
+    0,                         /* tp_str */
+    0,                         /* tp_getattro */
+    0,                         /* tp_setattro */
+    0,                         /* tp_as_buffer */
+    Py_TPFLAGS_DEFAULT |
+        Py_TPFLAGS_BASETYPE,   /* tp_flags */
+    "Basic metric",           /* tp_doc */
+    0,                         /* tp_traverse */
+    0,                         /* tp_clear */
+    0,                         /* tp_richcompare */
+    0,                         /* tp_weaklistoffset */
+    0,                         /* tp_iter */
+    0,                         /* tp_iternext */
+    Metric_methods,             /* tp_methods */
+    Metric_members,             /* tp_members */
+    0,                         /* tp_getset */
+    0,                         /* tp_base */
+    0,                         /* tp_dict */
+    0,                         /* tp_descr_get */
+    0,                         /* tp_descr_set */
+    0,                         /* tp_dictoffset */
+    (initproc)Metric_init,      /* tp_init */
+    0,                         /* tp_alloc */
+    Metric_new,                 /* tp_new */
+};
+
+
+
 
 /////////////////////////////////////////////////////////////
 //     PSI module functions 
@@ -608,18 +853,13 @@ static PyObject *PSI_skymap(PyObject *self, PyObject *args, PyObject* kwds) {
 	npy_intp nverts;
 	static char *kwlist[] = {"grid", "mesh", "bstep", "mode", NULL};
 
+	// parse PyArgs
 	bstep = 1;
 	mode = PSI_SKYMAP_RHO_LINEAR;
 	if(!PyArg_ParseTupleAndKeywords(args, kwds, "OO|ii", kwlist, &grid, &mesh, &bstep, &mode))
 		return MAKE_PY_NONE;
 
-	printf("Got grid verts...\n");
-	nverts = PyArray_SIZE((PyArrayObject*)mesh->pos);
-	if(nverts%3) return MAKE_PY_NONE;
-	nverts /= 3;
-	printf("npart = %d\n", (int)nverts);
-	//for(p = 0; p < )
-	
+	// make C structs, check them
 	PSI_Grid2grid(grid, &cgrid);
 	PSI_Mesh2mesh(mesh, &cmesh);
 	if(cgrid.type != PSI_GRID_HPRING || cgrid.dim != 3) 
@@ -627,12 +867,10 @@ static PyObject *PSI_skymap(PyObject *self, PyObject *args, PyObject* kwds) {
 	if(cmesh.dim != cgrid.dim)
 		Py_RETURN_NONE;
 
+	// run the skymap
 	printf("----Making hpring skymap, mode = %d-----\n", mode);
-
 	psi_skymap(&cgrid, &cmesh, bstep, mode);
-
-   /* Do your stuff here. */
-   Py_RETURN_NONE;
+	Py_RETURN_NONE;
 }
 
 
@@ -641,8 +879,9 @@ static PyObject *PSI_beamtrace(PyObject *self, PyObject *args, PyObject* kwds) {
 
 	psi_grid cgrid;
 	psi_mesh cmesh;
-	psi_int bstep, mode, metric;
-	char* cmetric;
+	psi_metric cmetric;
+	psi_int bstep, mode;
+	Metric* metric;
 	Grid* grid;	
 	psi_rvec obspos, obsvel;
 	psi_dvec gdim;
@@ -650,29 +889,26 @@ static PyObject *PSI_beamtrace(PyObject *self, PyObject *args, PyObject* kwds) {
 	npy_intp nverts;
 	static char *kwlist[] = {"grid", "metric", "obspos", "obsvel", NULL};
 
+	setbuf(stdout, NULL);
+
+	printf("---- GR beamtracing... -----\n");
+
 	bstep = 1;
 	mode = PSI_SKYMAP_RHO_LINEAR;
-	if(!PyArg_ParseTupleAndKeywords(args, kwds, "Os|(ddd)(ddd)", kwlist, &grid, &cmetric, &obspos.x, &obspos.y, &obspos.z, &obsvel.x, &obsvel.y, &obsvel.z))
+	if(!PyArg_ParseTupleAndKeywords(args, kwds, "OO|(ddd)(ddd)", kwlist, &grid, &metric, &obspos.x, &obspos.y, &obspos.z, &obsvel.x, &obsvel.y, &obsvel.z))
 		return MAKE_PY_NONE;
 
 	PSI_Grid2grid(grid, &cgrid);
 	if(cgrid.type != PSI_GRID_HPRING || cgrid.dim != 3) 
 		Py_RETURN_NONE;
 
-	if(strcmp(cmetric, "minkowski") == 0) {
-		metric = PSI_METRIC_MINKOWSKI; 
-	}
-	if(strcmp(cmetric, "flrw") == 0) {
-		metric = PSI_METRIC_FLRW; 
-	}
-	else {
-		psi_printf("Invalid metric\n");
-		Py_RETURN_NONE;
-	}
+	printf("metric2metric\n");
 
-	printf("---- GR beamtracing... -----\n");
+	PSI_Metric2metric(metric, &cmetric);
 
-	printf("grid.nside = %d, metric = %s, obspos = %f %f %f\n", cgrid.n.j, cmetric, obspos.x, obspos.y, obspos.z);
+	printf("metric2metric done\n");
+
+	printf("grid.nside = %d, metric type = %d, obspos = %f %f %f\n", cgrid.n.j, cmetric.type, obspos.x, obspos.y, obspos.z);
 
 
 
@@ -686,7 +922,7 @@ static PyObject *PSI_beamtrace(PyObject *self, PyObject *args, PyObject* kwds) {
 	PyObject* rayinfo = PyArray_SimpleNew(3, npdims, NPY_DOUBLE);
 	psi_real* infar = PyArray_DATA((PyArrayObject*)rayinfo);
 
-	psi_beamtrace(&cgrid, &cmesh, bstep, metric, infar, gdim);
+	psi_beamtrace(&cgrid, &cmesh, bstep, &cmetric, infar, gdim);
 
    /* Do your stuff here. */
    //Py_RETURN_NONE;
@@ -798,6 +1034,11 @@ PyMODINIT_FUNC initPSI(void) {
 	if(PyType_Ready(&GridType) < 0) return;
 	Py_INCREF(&GridType);
 	PyModule_AddObject(m, "Grid", (PyObject*)&GridType);
+
+	// add the metric type
+	if(PyType_Ready(&MetricType) < 0) return;
+	Py_INCREF(&MetricType);
+	PyModule_AddObject(m, "Metric", (PyObject*)&MetricType);
 
 
 	// TODO: add macroed constants to the Python module 

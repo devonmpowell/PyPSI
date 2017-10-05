@@ -10,19 +10,6 @@
 #define min(x, y) (((x) < (y))? (x) : (y))
 #define max(x, y) (((x) > (y))? (x) : (y))
 
-// structure to hold a polyhedron,
-// including mass coordinates
-#define POLYSZ 64 // TODO: fix this number better. Should be 16, accd to Euler Characteristic with 10 faces
-typedef struct {
-	psi_rvec pos, q;
-	psi_short pnbrs[PSI_NDIM];
-} psi_vertex;
-typedef struct {
-	psi_int nverts;
-	psi_dvec ibox[2];
-	psi_vertex verts[POLYSZ];
-} psi_poly; 
-
 // struct to voxelize a polyhedron
 // contains a stack and some grid information
 typedef struct {
@@ -42,24 +29,6 @@ void psi_reduce(psi_poly* poly, psi_real* moments, psi_int polyorder, psi_int we
 void psi_init_tet(psi_poly* poly, psi_rvec* verts);
 
 psi_real psi_orient_tet(psi_rvec* pos, psi_rvec* vel);
-
-
-
-void psi_clip_reduce_tet(psi_rvec* pos, psi_plane* clip_planes, psi_int nclip, psi_real* moments) {
-
-	psi_int i, j, ii, jj, gridind;
-	psi_poly curpoly;
-
-	// initialize the tet as an edge-vertex graph 
-	// and clamp it to the grid
-	psi_init_tet(&curpoly, pos);
-	psi_clip(&curpoly, clip_planes, nclip);
-	psi_reduce(&curpoly, moments, 1, 0);
-
-}
-
-
-
 
 
 void psi_voxelize_tet(psi_rvec* pos, psi_rvec* vel, psi_real mass, psi_rvec* rbox, psi_grid* grid) {
@@ -182,6 +151,44 @@ void psi_voxelize_tet(psi_rvec* pos, psi_rvec* vel, psi_real mass, psi_rvec* rbo
 	}
 }
 
+psi_real psi_orient_tet(psi_rvec* pos, psi_rvec* vel) {
+	psi_real adx, bdx, cdx;
+	psi_real ady, bdy, cdy;
+	psi_real adz, bdz, cdz;
+	psi_real vol;
+	psi_rvec swp;
+#if 1 
+	adx = pos[0].x - pos[3].x;
+	bdx = pos[1].x - pos[3].x;
+	cdx = pos[2].x - pos[3].x;
+	ady = pos[0].y - pos[3].y;
+	bdy = pos[1].y - pos[3].y;
+	cdy = pos[2].y - pos[3].y;
+	adz = pos[0].z - pos[3].z;
+	bdz = pos[1].z - pos[3].z;
+	cdz = pos[2].z - pos[3].z;
+	vol = -ONE_SIXTH*(adx*(bdy*cdz-bdz*cdy)
+			+bdx*(cdy*adz-cdz*ady)+cdx*(ady*bdz-adz*bdy));
+#elif 0 
+	adx = pos[0].x - pos[2].x;
+	bdx = pos[1].x - pos[2].x;
+	ady = pos[0].y - pos[2].y;
+	bdy = pos[1].y - pos[2].y;
+	// TODO: check the sign here!
+	vol = -0.5*(adx*bdy-bdx*ady);
+	//vol = 0.5*(adx*bdy-bdx*ady);
+#endif
+	if(vol < 0.0) { // swap two vertices if the volume is negative
+		swp = pos[0]; pos[0] = pos[1]; pos[1] = swp;
+		swp = vel[0]; vel[0] = vel[1]; vel[1] = swp;
+		vol *= -1;
+	}
+	return vol;
+}
+
+
+
+
 
 #if 0
 
@@ -223,43 +230,6 @@ void psi_voxelize_annihilation(psi_rvec* pos0, psi_rvec* vel0, psi_real mass0, p
 		dest_grid->fields[PSI_GRID_M][gridind] += 0.5*rho0*rho1*vol0*moments[0];
 	}
 }
-
-psi_real psi_orient_tet(psi_rvec* pos, psi_rvec* vel) {
-	psi_real adx, bdx, cdx;
-	psi_real ady, bdy, cdy;
-	psi_real adz, bdz, cdz;
-	psi_real vol;
-	psi_rvec swp;
-#if PSI_NDIM == 3
-	adx = pos[0].x - pos[3].x;
-	bdx = pos[1].x - pos[3].x;
-	cdx = pos[2].x - pos[3].x;
-	ady = pos[0].y - pos[3].y;
-	bdy = pos[1].y - pos[3].y;
-	cdy = pos[2].y - pos[3].y;
-	adz = pos[0].z - pos[3].z;
-	bdz = pos[1].z - pos[3].z;
-	cdz = pos[2].z - pos[3].z;
-	vol = -ONE_SIXTH*(adx*(bdy*cdz-bdz*cdy)
-			+bdx*(cdy*adz-cdz*ady)+cdx*(ady*bdz-adz*bdy));
-#elif PSI_NDIM == 2
-	adx = pos[0].x - pos[2].x;
-	bdx = pos[1].x - pos[2].x;
-	ady = pos[0].y - pos[2].y;
-	bdy = pos[1].y - pos[2].y;
-	// TODO: check the sign here!
-	vol = -0.5*(adx*bdy-bdx*ady);
-	//vol = 0.5*(adx*bdy-bdx*ady);
-#endif
-	if(vol < 0.0) { // swap two vertices if the volume is negative
-		swp = pos[0]; pos[0] = pos[1]; pos[1] = swp;
-		swp = vel[0]; vel[0] = vel[1]; vel[1] = swp;
-		vol = -vol;
-	}
-	return vol;
-}
-
-
 
 
 void psi_point_sample_tet(psi_rvec* pos, psi_rvec* vel, psi_real mass, psi_rvec* rbox, psi_dest_grid* grid) {
@@ -509,7 +479,6 @@ void psi_clip(psi_poly* poly, psi_plane* planes, psi_int nplanes) {
 	}
 }
 
-#if 1
 void psi_tet_faces_from_verts(psi_plane* faces, psi_rvec* verts) {
 #define dot(va, vb) (va.x*vb.x + va.y*vb.y + va.z*vb.z)
 	// TODO: 2D vs 3D
@@ -566,8 +535,6 @@ void psi_tet_faces_from_verts(psi_plane* faces, psi_rvec* verts) {
 #elif PSI_NDIM == 2
 #endif
 }
-#endif
-
 
 void psi_split_coord(psi_poly* inpoly, psi_poly* outpolys, psi_real coord, psi_int ax) {
 
