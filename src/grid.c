@@ -119,7 +119,7 @@ void neighbors(int order_, int pix, int* result) {
 
   // back out all the Healpix parameters
   int nside_  = 1<<order_;
-int ix, iy, face_num;
+int ix, iy, face_num, m, i;
 //(scheme_==RING) ?
   ring2xyf(order_, pix,&ix,&iy,&face_num);// : nest2xyf(pix,ix,iy,face_num);
 
@@ -127,7 +127,7 @@ const int nsm1 = nside_-1;
 if ((ix>0)&&(ix<nsm1)&&(iy>0)&&(iy<nsm1))
   {
   //if (scheme_==RING)
-    for (int m=0; m<8; ++m)
+    for (m=0; m<8; ++m)
       result[m] = xyf2ring(order_, ix+xoffset[m],iy+yoffset[m],face_num);
   //else
     //for (int m=0; m<8; ++m)
@@ -135,7 +135,7 @@ if ((ix>0)&&(ix<nsm1)&&(iy>0)&&(iy<nsm1))
   }
 else
   {
-  for (int i=0; i<8; ++i)
+  for (i=0; i<8; ++i)
     {
     int x=ix+xoffset[i];
     int y=iy+yoffset[i];

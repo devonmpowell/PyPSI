@@ -75,7 +75,7 @@ void psi_do_phi(psi_grid* grid, psi_real* phi_out, psi_real Gn) {
 
 	fftw_plan p, pinv;
 	fftw_complex* rhok;
-	psi_int ax;
+	psi_int ax, i, j, k;
 	psi_dvec halfn, dims;
 	psi_rvec kvec, L, dx;
 	psi_real kvec2;
@@ -93,9 +93,9 @@ void psi_do_phi(psi_grid* grid, psi_real* phi_out, psi_real Gn) {
 	fftw_destroy_plan(p);
 
 	// Phi
-	for(int i = 0; i < dims.i; ++i) 
-	for(int j = 0; j < dims.j; ++j) 
-	for(int k = 0; k < halfn.k; ++k) {
+	for(i = 0; i < dims.i; ++i) 
+	for(j = 0; j < dims.j; ++j) 
+	for(k = 0; k < halfn.k; ++k) {
 
 		// zero the DC component
 		if(i == 0 && j == 0 && k == 0) {
