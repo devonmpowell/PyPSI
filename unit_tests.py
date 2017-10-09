@@ -15,9 +15,12 @@ class MassMapTests(TestCase):
 
     def test_skymap(self):
 
+
+        return
+
         print
         snap = 'data/snapshot_010'
-        nside = 16 # 32
+        nside = 64 # 16 # 32
         mesh = psi.Mesh(filename=snap, loader='gadget2')
         #mesh = psi.Mesh(filename='', loader='hacky_test')
         grid = psi.Grid(type='hpring', n=nside) 
@@ -36,6 +39,8 @@ class MassMapTests(TestCase):
 
     def test_voxels(self):
 
+        return
+
         # load a mesh, make a grid, and voxelize
         print
         ngrid = 3*(128,) 
@@ -51,8 +56,8 @@ class MassMapTests(TestCase):
         err = np.abs(1.0-voxmass/elemmass)
         print ' - total mass =', voxmass 
         print " - mass error = ", err 
-        #plt.imshow(np.log10(grid.fields["m"][:,:,32]))
-        #plt.show()
+        plt.imshow(np.log10(grid.fields["m"][:,:,32]))
+        plt.show()
         self.assertAlmostEqual(err, 0.0, delta=errtol)
        
 
@@ -85,7 +90,10 @@ class FFTTests(TestCase):
 # test basic Grid functionality 
 class GridTests(TestCase):
 
+
     def test_grid_cart(self):
+
+
         print
         grid = psi.Grid(type='cart', n=(10,10,10)) # default is 64^3 unit box
         print ' - type =', grid.type 
@@ -126,7 +134,6 @@ class PSIMODTests(TestCase):
 
     def test_beam_tracing(self):
 
-        return
 
 
         metric = psi.Metric(type='flrw', filepattern='/home/devon/HDD/PS-128-vm/geo/%04d')

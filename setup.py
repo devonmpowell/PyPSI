@@ -16,7 +16,7 @@ setup(
     version = '3.0.2',
     author = 'Devon Powell',
     author_email = 'devonmpowell1@gmail.com',
-    url = '-',
+    url = 'https://upload.pypi.org/legacy/',
     ext_modules=[c_ext],
     install_requires = ['numpy'],
     include_dirs=['include', np.get_include()],
