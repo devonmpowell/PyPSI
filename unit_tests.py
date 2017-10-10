@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import healpy as hp
 import sys
 
-# set tolerances for floating-points checks
+# set tolerances for floating-point checks
 errtol = 1.0e-4
 
 
@@ -39,11 +39,11 @@ class MassMapTests(TestCase):
 
     def test_voxels(self):
 
-        return
+        #return
 
         # load a mesh, make a grid, and voxelize
         print
-        ngrid = 3*(128,) 
+        ngrid = 3*(64,) 
         snap = 'data/snapshot_010'
         mesh = psi.Mesh(filename=snap, loader='gadget2')
         grid = psi.Grid(type='cart', n=ngrid, window=(mesh.boxmin, mesh.boxmax)) 
@@ -133,6 +133,8 @@ class MeshTests(TestCase):
 class PSIMODTests(TestCase):
 
     def test_beam_tracing(self):
+
+        return
 
 
 
