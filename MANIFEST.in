@@ -1,2 +1,9 @@
-include include/*
 include README
+include include/PSI.h
+include include/mesh.h
+include include/grid.h
+include include/geometry.h
+include include/skymap.h
+include include/refine.h
+include include/rtree.h
+include include/beamtrace.h

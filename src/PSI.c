@@ -173,19 +173,73 @@ static void PSI_Metric2metric(Metric* metric, psi_metric* cmetric) {
 
 static int Mesh_init(Mesh *self, PyObject *args, PyObject *kwds) {
 
-	psi_int ax;
+	psi_int ax, ndim;
 	psi_mesh cmesh;
+	PyObject *posar, *velar, *massar, *box, *n;
 	char* cloader, *cfile;
 	npy_intp npdims[6];
-	static char *kwlist[] = {"filename", "loader", NULL};
+	npy_intp *dtmp; 
+	static char *kwlist[] = {"loader", "filename", "posar", "velar", "massar", "box", "n", NULL};
 
 	// parse arguments differently depending on what the grid type is
 	// certain grid types must correspond to certain arg patterns
-	if(!PyArg_ParseTupleAndKeywords(args, kwds, "ss", kwlist, &cfile, &cloader))
+	if(!PyArg_ParseTupleAndKeywords(args, kwds, "s|sOOOOO", kwlist, &cloader, &cfile, &posar, &velar, &massar, &box, &n))
 			return -1;
 
 	// fill in all grid information as Python tuples
-	if(strcmp(cloader, "gadget2") == 0) {
+	if(strcmp(cloader, "array") == 0) {
+
+		// TODO: check dtype!!!!
+
+		setbuf(stdout, NULL);
+
+		if(!PyArray_Check(posar))
+			return -1;
+
+		ndim = PyArray_NDIM(posar);
+		dtmp = PyArray_DIMS(posar);
+
+		psi_printf("Pos array dimensions are %d %d %d %d, ndim = %d\n", dtmp[0], dtmp[1], dtmp[2], dtmp[3], ndim);
+
+		self->boxmin = PySequence_GetItem(box, 0); 
+		self->boxmax = PySequence_GetItem(box, 1); 
+
+		self->pos = posar;
+		Py_INCREF(posar);
+
+		// TODO: set better error handling here
+		self->vel = PyArray_SimpleNew(ndim, dtmp, NPY_DOUBLE);
+		self->mass = PyArray_SimpleNew(ndim-1, dtmp, NPY_DOUBLE);
+
+
+		npdims[0] = 64*64*64;
+		npdims[1] = psi_verts_per_elem(PSI_MESH_LINEAR); 
+		self->connectivity = PyArray_SimpleNew(2, npdims, NPY_INT32);
+		psi_int* cptr = (psi_int*) PyArray_DATA(self->connectivity); 
+
+		psi_printf("Using the array loader.\n");
+
+		// now build the mesh connectivity
+		// trilinear elements naturally
+		psi_int i, j, k, ii, jj, kk, locind, vertind;
+		psi_int elemind;
+		psi_int nside = 64; 
+		for(i = 0; i < nside; ++i)
+		for(j = 0; j < nside; ++j)
+		for(k = 0; k < nside; ++k) {
+			elemind = nside*nside*i + nside*j + k;
+			for(ii = 0; ii < 2; ++ii)
+			for(jj = 0; jj < 2; ++jj)
+			for(kk = 0; kk < 2; ++kk) {
+				locind = 4*ii + 2*jj + kk;
+				vertind = nside*nside*((i+ii)%nside) 
+					+ nside*((j+jj)%nside) + ((k+kk)%nside);
+				cptr[8*elemind+locind] = vertind;
+			}
+		}
+
+	}
+	else if(strcmp(cloader, "gadget2") == 0) {
 
 		psi_printf("Using the Gadget2 loader.\n");
 
@@ -981,7 +1035,7 @@ static PyObject *PSI_phi(PyObject *self, PyObject *args, PyObject* kwds) {
 
 	// the return array
 	PyObject* retar = PyArray_ZEROS(cgrid.dim, npdims, NPY_DOUBLE, 0);
-	psi_do_phi(&cgrid, PyArray_DATA(retar), Gn);
+	//psi_do_phi(&cgrid, PyArray_DATA(retar), Gn);
 	return retar;
 }
 
