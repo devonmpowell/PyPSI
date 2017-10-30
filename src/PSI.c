@@ -212,7 +212,9 @@ static int Mesh_init(Mesh *self, PyObject *args, PyObject *kwds) {
 		self->mass = PyArray_SimpleNew(ndim-1, dtmp, NPY_DOUBLE);
 
 
-		npdims[0] = 64*64*64;
+		psi_int nside = 64; 
+		//psi_int nside = 512; 
+		npdims[0] = nside*nside*nside;
 		npdims[1] = psi_verts_per_elem(PSI_MESH_LINEAR); 
 		self->connectivity = PyArray_SimpleNew(2, npdims, NPY_INT32);
 		psi_int* cptr = (psi_int*) PyArray_DATA(self->connectivity); 
@@ -223,7 +225,6 @@ static int Mesh_init(Mesh *self, PyObject *args, PyObject *kwds) {
 		// trilinear elements naturally
 		psi_int i, j, k, ii, jj, kk, locind, vertind;
 		psi_int elemind;
-		psi_int nside = 64; 
 		for(i = 0; i < nside; ++i)
 		for(j = 0; j < nside; ++j)
 		for(k = 0; k < nside; ++k) {

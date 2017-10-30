@@ -134,11 +134,12 @@ class PSIMODTests(TestCase):
 
     def test_beam_tracing(self):
 
-        return
+        #return
 
 
 
-        metric = psi.Metric(type='flrw', filepattern='/home/devon/HDD/PS-128-vm/geo/%04d')
+        #metric = psi.Metric(type='flrw', filepattern='/home/devon/HDD/PS-128-vm/geo/%04d')
+        metric = psi.Metric(type='kerr')
 
 
         with open('/home/devon/HDD/PS-128-vm/geo/0137', 'rb') as f: 
@@ -180,7 +181,7 @@ class PSIMODTests(TestCase):
         #print
         grid = psi.Grid(type='hpring', n=16) 
         
-        rayinfo = psi.beamtrace(grid=grid, metric=metric, obspos=(20.,20.,20.), obsvel=(0.,0.,0.))
+        rayinfo = psi.beamtrace(grid=grid, metric=metric, obspos=(10.,9.,8.), obsvel=(0.,0.,0.))
 
         print rayinfo.shape
         print rayinfo[0,:,:]
@@ -215,7 +216,7 @@ class PSIMODTests(TestCase):
         #mesh = psi.Mesh(filename='data/box128_010', loader='gadget2')
         #print mesh.pos[mesh.connectivity][12475]
 
-        grid = psi.Grid(type='hpring', n=64) 
+        grid = psi.Grid(type='hpring', n=128) 
 
         psi.skymap(grid=grid, mesh=mesh, bstep=1, mode=1)
 
@@ -224,7 +225,7 @@ class PSIMODTests(TestCase):
         print " - min = ", np.min(grid.fields["m"])
         print " - max = ", np.max(grid.fields["m"])
 
-        #grid.fields["m"].tofile('data/scratch.np')
+        grid.fields["m"].tofile('data/annihilation128_shell.np')
         
         # show the pixel area plot
         #hp.mollview(np.log10(grid.fields['m']), title='Mass map, err = %.5e'%err)

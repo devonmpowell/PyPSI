@@ -110,14 +110,14 @@ void psi_skymap(psi_grid* grid, psi_mesh* mesh, psi_int bstep, psi_int mode) {
 				rawverts[2].xyz[ax] = center.xyz[ax]; 
 			}
 	
-			//psi_real rmin = 10.0;
-			//psi_real rmax = 10.0 + 0.001;
-			//psi_real rstep = .001001; 
+			psi_real rmin = 10.0;
+			psi_real rmax = 10.0 + 0.001;
+			psi_real rstep = .001001; 
 			
 
-			psi_real rmin = 0.0; 
-			psi_real rmax = 100.0; 
-			psi_real rstep = 1.0; 
+			//psi_real rmin = 0.0; 
+			//psi_real rmax = 100.0; 
+			//psi_real rstep = 1.0; 
 			
 			psi_real rold = rmin;
 			psi_real rnew;

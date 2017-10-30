@@ -13,11 +13,12 @@
 // stores a beam: 3 vertices with corresponding 4-positions
 // and 4-velocities 
 typedef struct {
-
-	psi_4vec pos; // 4-position
-	psi_4vec vel; // 4-tangent vector
-	psi_real alpha; // affine parameter
-
+	struct {
+		psi_4vec pos; // 4-position
+		psi_4vec vel; // 4-tangent vector
+		psi_real alpha; // affine parameter
+		int info[4]; // for passing flags, etc
+	} verts[3];
 } psi_beam;
 
 
