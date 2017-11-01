@@ -175,6 +175,7 @@ static int Mesh_init(Mesh *self, PyObject *args, PyObject *kwds) {
 
 	psi_int ax, ndim;
 	psi_mesh cmesh;
+	psi_dvec nside;
 	PyObject *posar, *velar, *massar, *box, *n;
 	char* cloader, *cfile;
 	npy_intp npdims[6];
@@ -204,6 +205,17 @@ static int Mesh_init(Mesh *self, PyObject *args, PyObject *kwds) {
 		self->boxmin = PySequence_GetItem(box, 0); 
 		self->boxmax = PySequence_GetItem(box, 1); 
 
+		if(!PySequence_Check(n)) {
+			psi_printf("Must provide particle block dimensions!\n");
+			Py_RETURN_NONE;
+		}
+		for(ax = 0; ax < 3; ++ax)
+			nside.ijk[ax] = PyInt_AsLong(PySequence_GetItem(n, ax));
+
+		printf("Loaded nside = %d %d %d\n", nside.i, nside.j, nside.k);
+
+
+
 		self->pos = posar;
 		Py_INCREF(posar);
 
@@ -211,8 +223,12 @@ static int Mesh_init(Mesh *self, PyObject *args, PyObject *kwds) {
 		self->vel = PyArray_SimpleNew(ndim, dtmp, NPY_DOUBLE);
 		self->mass = PyArray_SimpleNew(ndim-1, dtmp, NPY_DOUBLE);
 
+		npdims[0] = nside.i*nside.j*nside.k;
+		if(npdims[0] != dtmp[0]) {
+			psi_printf("Number of particles does not match block dimensions!\n");
+			Py_RETURN_NONE;
+		}
 
-		npdims[0] = 64*64*64;
 		npdims[1] = psi_verts_per_elem(PSI_MESH_LINEAR); 
 		self->connectivity = PyArray_SimpleNew(2, npdims, NPY_INT32);
 		psi_int* cptr = (psi_int*) PyArray_DATA(self->connectivity); 
@@ -223,17 +239,16 @@ static int Mesh_init(Mesh *self, PyObject *args, PyObject *kwds) {
 		// trilinear elements naturally
 		psi_int i, j, k, ii, jj, kk, locind, vertind;
 		psi_int elemind;
-		psi_int nside = 64; 
-		for(i = 0; i < nside; ++i)
-		for(j = 0; j < nside; ++j)
-		for(k = 0; k < nside; ++k) {
-			elemind = nside*nside*i + nside*j + k;
+		for(i = 0; i < nside.i; ++i)
+		for(j = 0; j < nside.j; ++j)
+		for(k = 0; k < nside.k; ++k) {
+			elemind = nside.j*nside.k*i + nside.k*j + k;
 			for(ii = 0; ii < 2; ++ii)
 			for(jj = 0; jj < 2; ++jj)
 			for(kk = 0; kk < 2; ++kk) {
 				locind = 4*ii + 2*jj + kk;
-				vertind = nside*nside*((i+ii)%nside) 
-					+ nside*((j+jj)%nside) + ((k+kk)%nside);
+				vertind = nside.j*nside.k*((i+ii)%nside.i) 
+					+ nside.k*((j+jj)%nside.j) + ((k+kk)%nside.k);
 				cptr[8*elemind+locind] = vertind;
 			}
 		}
