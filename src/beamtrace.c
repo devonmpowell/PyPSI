@@ -105,13 +105,13 @@ void psi_get_phi_and_grad(psi_real* phi, psi_4vec *gradphi, psi_4vec pos, psi_me
 
 }
 
-void psi_get_4acc(psi_4vec *acc, psi_4vec pos, psi_4vec vel, psi_metric* metric) {
+void psi_get_updated_4vel(psi_4vec *newvel, psi_4vec pos, psi_4vec vel, psi_real dalpha, psi_metric* metric) {
 
 	psi_int ax;
 	psi_real phi;
-	psi_4vec gradphi;
+	psi_4vec gradphi, acc;
 
-	memset(acc, 0, sizeof(psi_4vec));
+	memset(newvel, 0, sizeof(psi_4vec));
 
 	if(metric->type == PSI_METRIC_FLRW) {
 
@@ -119,78 +119,103 @@ void psi_get_4acc(psi_4vec *acc, psi_4vec pos, psi_4vec vel, psi_metric* metric)
 		// TODO: pass this as a metric parameter
 		psi_real hubble = 0.0;
 		for(ax = 0; ax < 4; ++ax)
-			acc->txyz[ax] = -2*hubble*vel.txyz[ax]*vel.t; 
+			acc.txyz[ax] = -2*hubble*vel.txyz[ax]*vel.t; 
 
 		// do the gradients of phi
 		psi_get_phi_and_grad(&phi, &gradphi, pos, metric);
 		psi_real vel2 = vel.t*vel.t + vel.x*vel.x + vel.y*vel.y + vel.z*vel.z;
 		psi_real vdotgrad = vel.t*gradphi.t + vel.x*gradphi.x + vel.y*gradphi.y + vel.z*gradphi.z;
-		acc->t += -1/(1+2*phi)*(2*vel.t*vdotgrad-vel2*gradphi.t);
+		acc.t += -1/(1+2*phi)*(2*vel.t*vdotgrad-vel2*gradphi.t);
 		for(ax = 1; ax < 4; ++ax)
-			acc->txyz[ax] += 1/(1-2*phi)*(2*vel.txyz[ax]*vdotgrad-vel2*gradphi.txyz[ax]);
+			acc.txyz[ax] += 1/(1-2*phi)*(2*vel.txyz[ax]*vdotgrad-vel2*gradphi.txyz[ax]);
+
+		// update the 4-velocity
+		*newvel = vel;
+		for(ax = 0; ax < 4; ++ax)
+			newvel->txyz[ax] += dalpha*acc.txyz[ax]; 
 
 	}
 
 	else if(metric->type == PSI_METRIC_KERR) {
 
+		psi_real M = 1.0;
+		psi_real a = 0.7;
+
+		// polar coordinates
+		psi_real r = pos.x; 
+		psi_real theta = pos.y; 
+		psi_real rhosq = r*r + (a*cos(theta))*(a*cos(theta));
+		psi_real delta = r*r - 2*r + a*a;
+
+		// constants of motion
+		psi_real k = vel.x;
+		psi_real h = vel.y;
+		psi_real Q = vel.z;
 
 
-		psi_real sigma, delta, dsigmadtheta, dsigmadr, ddeltadr;
-		psi_real sintheta, costheta, cottheta;
-		psi_real sin2theta, cos2theta;
-		psi_real M, r, a;
-		psi_real ut, ur, utheta, uphi; 
 
-		M = 1;
-		a = 0.7;
+		// tdot
+		psi_real pt = (rhosq*(r*r + a*a) + 2*a*a*r*sin(theta)*sin(theta))*k - 2*a*r*h;
+		pt = pt / ( r*r * (1 + (a*cos(theta)/r)*(a*cos(theta)/r) - 2/r)*(r*r + a*a) + 2*a*a*r*sin(theta)*sin(theta) );
 
-		// set up preliminary stuff
-		ut = vel.t;
-		ur = vel.x;
-		utheta = vel.y;
-		uphi = vel.x;
-		r = pos.x;
-		sintheta = sin(pos.y);
-		costheta = cos(pos.y);
-		cottheta = costheta/sintheta;
-		printf("cottheta = %.5e\n", cottheta);
-		sin2theta = sintheta*sintheta;
-	   	cos2theta = costheta*costheta;	
-		sigma = r*r + a*a*costheta*costheta;
-		delta = r*r - 2*M*r + a*a; 
-		dsigmadr = 2*r;
-		dsigmadtheta = -2*a*a*costheta*sintheta; 
-		ddeltadr = -2*M + 2*r; 
+		// phidot
+		psi_real pphi = 2*a*r*sin(theta)*sin(theta)*k + (r*r + (a*cos(theta))*(a*cos(theta)) - 2*r)*h;
+		pphi = pphi / ( (r*r + a*a)*(r*r + (a*cos(theta))*(a*cos(theta)) - 2*r)*sin(theta)*sin(theta) + 2*a*a*r*sin(theta)*sin(theta)*sin(theta)*sin(theta) );
 
-		// this is all Mathematica vomit
-	
-		// t
-		acc->t = (-2*M*(r*utheta*(-2*a*sintheta*sintheta*uphi*sigma*(2*a*a*M*r*sin2theta + (a*a + r*r)*dsigmadtheta) + 
-	           ut*(-6*a*a*M*r*sintheta*sintheta*dsigmadtheta + sigma*(8*a*a*M*r*sin2theta + (a*a + r*r)*dsigmadtheta))) + 
-	        ur*(ut*(-6*a*a*M*r*sintheta*sintheta + (a*a + r*r)*sigma)*(-sigma + r*dsigmadr) + 
-	           2*a*sintheta*sintheta*uphi*sigma*((a*a - r*r)*sigma - r*(a*a + r*r)*dsigmadr))))/
-	    (sigma*(12*a*a*M*M*r*r*sintheta*sintheta - M*r*(a*a + 2*r*r + a*a*cos2theta)*sigma + (a*a + r*r)*sigma*sigma));
-	
-		// r
-	   acc->x = (2*M*ut*ut*delta*delta*(sigma - r*dsigmadr) - 8*a*M*sintheta*sintheta*ut*uphi*delta*delta*(sigma - r*dsigmadr) + 
-	      2*sintheta*sintheta*uphi*uphi*delta*delta*(a*a*M*sintheta*sintheta*sigma + r*sigma*sigma - a*a*M*r*sintheta*sintheta*dsigmadr) + 
-	      sigma*sigma*(2*ur*utheta*(-delta*dsigmadtheta) + utheta*utheta*delta*delta*dsigmadr + 
-	         ur*ur*(sigma*ddeltadr - delta*dsigmadr)))/(2.*delta*sigma*sigma*sigma);
-	
-	   // theta
-	   acc->y = (-2*M*r*ut*ut*delta*delta*dsigmadtheta + 8*a*M*r*sintheta*ut*uphi*delta*delta*(-2*costheta*sigma + sintheta*dsigmadtheta) + 
-	      uphi*uphi*delta*delta*(8*a*a*M*r*costheta*sintheta*sintheta*sintheta*sigma + (a*a + r*r)*sin2theta*sigma*sigma - 
-	         2*a*a*M*r*sintheta*sintheta*sintheta*sintheta*dsigmadtheta) - sigma*sigma*
-	       (utheta*utheta*delta*delta*dsigmadtheta + ur*ur*(-delta*dsigmadtheta) + 
-	         2*ur*utheta*delta*delta*dsigmadr))/(2.*delta*delta*sigma*sigma*sigma);
-	
-	   // phi
-	   acc->z = (-4*a*M*ut*sigma*(r*utheta*(4*M*r*cottheta - 2*cottheta*sigma + dsigmadtheta) + ur*(-sigma + r*dsigmadr)) + 
-	      uphi*(2*utheta*(2*M*r*(r*r + a*a*cos2theta)*cottheta*sigma*sigma - (a*a + r*r)*cottheta*sigma*sigma*sigma + 
-	            6*a*a*M*M*r*r*sintheta*sintheta*dsigmadtheta - a*a*M*r*sintheta*sigma*(8*M*r*costheta - sintheta*dsigmadtheta)) + 
-	         ur*(M*(-a*a + 4*r*r + a*a*cos2theta)*sigma*sigma - 2*r*sigma*sigma*sigma - 2*a*a*M*r*sintheta*sintheta*sigma*(6*M - dsigmadr) + 
-	            12*a*a*M*M*r*r*sintheta*sintheta*dsigmadr)))/
-	    (sigma*(12*a*a*M*M*r*r*sintheta*sintheta - M*r*(a*a + 2*r*r + a*a*cos2theta)*sigma + (a*a + r*r)*sigma*sigma));
+		// thetadot
+		psi_real thetadotsq = Q + (k*a*cos(theta) + h/tan(theta))*(k*a*cos(theta) - h/tan(theta));
+		thetadotsq = thetadotsq / (rhosq*rhosq);
+
+
+		psi_int thetadot_sign = 1;
+		psi_int rdot_sign = 1;
+		//if(thetadotsq < 0 && thetasign_count >= COUNT_MIN)
+		//{
+			//thetadot_sign *= -1;
+			//thetasign_count = 0;
+			//return;
+		//}
+		//if (thetasign_count <= COUNT_MIN) thetasign_count++;
+
+		// take the square roots and get the right signs
+		psi_real ptheta = sqrtf(abs(thetadotsq)) * thetadot_sign;
+
+		// rdot
+		psi_real rdotsq = k*pt - h*pphi - rhosq*ptheta*ptheta;
+		rdotsq = rdotsq * delta/rhosq;
+
+		//if(rdotsq < 0 && rsign_count >= COUNT_MIN)
+		//{
+			//rdot_sign *= -1;
+			//rsign_count = 0;
+			//return;
+		//}
+		//if (rsign_count <= COUNT_MIN) rsign_count++;
+
+		psi_real pr = sqrtf(abs(rdotsq)) * rdot_sign;
+
+#if 0
+		step = abs( (r-(T)horizon)/pr ) / tol;
+		// if the step is smaller in theta or phi (near 0/pi/2pi), use that instead
+		if( step > abs( theta/ptheta ) / tol ) step = abs( theta/ptheta ) / tol;
+//		if( step > abs( phi/pphi ) / tol ) step = abs( phi/pphi ) / tol;
+//		if( step > abs( (phi - M_PI)/pphi ) / tol ) step = abs( (phi - M_PI)/pphi ) / tol;
+//		if( step > abs( (phi - 2*M_PI)/pphi ) / tol ) step = abs( (phi - 2*M_PI)/pphi ) / tol;
+		// don't let the step be stupidly small
+		if( step < MIN_STEP ) step = MIN_STEP;
+		if(reverse) step *= -1;
+#endif
+
+		// calculate new position
+#if 0
+		if(r <= horizon) break;
+		if(boundary > 0 && r <= boundary) break;
+#endif
+
+		newvel->t = pt;
+		newvel->x = pr;
+		newvel->y = ptheta;
+		newvel->z = pphi;
 
 
 	}
@@ -231,13 +256,14 @@ psi_real psi_4dot(psi_4vec dx0, psi_4vec dx1, psi_4vec x, psi_metric* metric) {
 		sigma = r*r + a*a*costheta*costheta;
 		delta = r*r - 2*M*r + a*a; 
 
+		// TODO: correct units!
 		return (dx0.x*dx1.x*sigma*sigma + delta*(2*M*r*(dx0.t*dx1.t - 2*a*(dx0.t*dx1.z + dx0.z*dx1.t)*sintheta*sintheta + a*a*dx0.z*dx1.z*sintheta*sintheta*sintheta*sintheta) + 
 				(-(dx0.t*dx1.t) + dx0.z*dx1.z*(a*a + r*r)*sintheta*sintheta)*sigma + dx0.y*dx1.y*sigma*sigma))/(delta*sigma);
 	
 	}
 }
 
-void psi_setup_ray_coords(psi_beam* beam, psi_rvec pos, psi_rvec vel, psi_metric* metric) {
+void psi_setup_ray_coords(psi_4vec* pos, psi_4vec* vel, psi_int* info, psi_rvec cartpos, psi_rvec cartvel, psi_metric* metric) {
 
 	// TODO: more clever transformation from observer frame!
 
@@ -247,36 +273,86 @@ void psi_setup_ray_coords(psi_beam* beam, psi_rvec pos, psi_rvec vel, psi_metric
 
 	// first, convert Cartesian position coordinates
 	// to the appropriate spatial coordinates for this metric
-	beam->alpha = 0.0;
 	if(metric->type == PSI_METRIC_MINKOWSKI || metric->type == PSI_METRIC_FLRW) {
-		// for Cartesian metrics, just use the given spatial coordinates
+		// for Cartesian metrics, just use the given Cartesian coordinates
 		for(ax = 0; ax < 3; ++ax) {
-			beam->pos.txyz[ax+1] = pos.xyz[ax];
-			beam->vel.txyz[ax+1] = vel.xyz[ax];
+			pos->txyz[ax+1] = cartpos.xyz[ax];
+			vel->txyz[ax+1] = cartvel.xyz[ax];
 		}
 	}
 	else if(metric->type == PSI_METRIC_KERR) {
 		// Kerr metric is in Boyer-Lindquist (spherical) coordinates
 		// r, theta, phi
-		beam->pos.x = sqrt(pos.x*pos.x+pos.y*pos.y+pos.z*pos.z);
-		beam->pos.y = acos(pos.z/beam->pos.x); 
-		beam->pos.z = atan2(pos.y, pos.x); 
 
-		// TODO: beam 4-velocity from vel!
+		psi_real M = 1.0;
+		psi_real a = 0.7;
 
-		// dr/dt
-		psi_real x2y2 = pos.x*pos.x + pos.y*pos.y;
-		beam->vel.x = (vel.x*pos.x+vel.y*pos.y+vel.z*pos.z)/beam->pos.x;
-		beam->vel.x = (vel.x*pos.y-vel.y*pos.x)/x2y2; 
-		beam->vel.z = (pos.z*(vel.x*pos.x+vel.y*pos.y)-x2y2*vel.z)/(beam->pos.x*beam->pos.x*sqrt(x2y2));
+		psi_real V = 0.0;
+
+		// the beam spherical coordinates
+		psi_real r = sqrt(cartpos.x*cartpos.x+cartpos.y*cartpos.y+cartpos.z*cartpos.z);
+		psi_real theta = acos(cartpos.z/cartpos.x); 
+		psi_real phi = atan2(cartpos.y, cartpos.x); 
+
+		// Compute the constants of motion for a ray emitted at polar angles alpha and beta in the frame
+		// of a source at (t,r,theta,phi) orbiting azimuthally at angular velocity V
+		psi_real rhosq = r*r + (a*cos(theta))*(a*cos(theta));
+		psi_real delta = r*r - 2*r + a*a;
+		psi_real sigmasq = (r*r + a*a)*(r*r + a*a) - a*a*delta*sin(theta)*sin(theta);
+	
+		// metric coefficients
+		psi_real e2nu = rhosq * delta / sigmasq;
+		psi_real e2psi = sigmasq * sin(theta)*sin(theta) / rhosq;
+		psi_real omega = 2*a*r / sigmasq;
+
+		//printf(" e2nu, e2psi, omega = %.5e %.5e %.5e\n", e2nu, e2psi, omega); 
+	
+		// tetrad basis vector components
+		psi_real et0 = (1/sqrtf(e2nu))/sqrtf(1 - (V - omega)*(V - omega)*e2psi/e2nu);
+		psi_real et3 = (1/sqrtf(e2nu))*V / sqrtf(1 - (V - omega)*(V - omega)*e2psi/e2nu);
+		psi_real e10 = (V - omega)*sqrtf(e2psi/e2nu) / sqrtf(e2nu - (V-omega)*(V-omega)*e2psi);
+		psi_real e13 = (1/sqrtf(e2nu*e2psi))*(e2nu + V*omega*e2psi - omega*omega*e2psi) / sqrtf(e2nu - (V-omega)*(V-omega)*e2psi);
+		psi_real e22 = 1/sqrtf(rhosq);
+		psi_real e31 = sqrtf(delta/rhosq);
+	
+		// photon 4-momentum in source frame
+		psi_real E = 1.0;
+		//psi_real rdotprime[] = { E, E*sin(alpha)*sin(beta), E*sin(alpha)*cos(beta), E*cos(alpha) };
+		psi_real rdotprime[] = { E, E*cartvel.x, E*cartvel.y, E*cartvel.z};
+	
+		psi_real tdot = rdotprime[0]*et0 + rdotprime[1]*e10;
+		psi_real phidot = rdotprime[0]*et3 + rdotprime[1]*e13;
+		psi_real rdot = rdotprime[3]*e31;
+		psi_real thetadot = rdotprime[2]*e22;
 
 
+		//printf(" et3, e13 = %f %f\n", et3, e13); 
+		//printf(" tdot, phidot, thetadot = %f %f %f\n", tdot, phidot, thetadot);
 
+	
+		// find the corresponding values of k, h and Q using the geodesic equations
+		psi_real k = (1 - 2*r/rhosq)*tdot + (2*a*r*sin(theta)*sin(theta)/rhosq)*phidot;
+		psi_real h = phidot * ( (r*r + a*a)*(r*r + a*a*cos(theta)*cos(theta) - 2*r)*sin(theta)*sin(theta) + 2*a*a*r*sin(theta)*sin(theta)*sin(theta)*sin(theta) );
+		h = h - 2*a*r*k*sin(theta)*sin(theta);
+		h = h / ( r*r + a*a*cos(theta)*cos(theta) - 2*r );
+		psi_real Q = rhosq*rhosq*thetadot*thetadot - (a*k*cos(theta) + h/tan(theta))*(a*k*cos(theta) - h/tan(theta));
 
-		////
+		// set the beam coordinates in BL system
+		pos->x = r;
+		pos->y = theta;
+		pos->z = phi;
 
+		vel->x = k;
+		vel->y = h;
+		vel->z = Q;
 
+#define sgn(x) (((x) > 0.0)? 1: -1)
+		info[0] = 0;
+		info[1] = sgn(rdot);
+		info[2] = 0;
+		info[3] = sgn(thetadot);
 
+		printf(" pos = %f %f %f , khQ = %f %f %f\n", pos->x, pos->y, pos->z, vel->x, vel->y, vel->z);
 
 	}
 
@@ -284,15 +360,15 @@ void psi_setup_ray_coords(psi_beam* beam, psi_rvec pos, psi_rvec vel, psi_metric
 
 	// last, set the time coordinate of the 4-velocity
 	// to enforce a null trajectory
-	beam->pos.t = 0.0; // set observer reference time to zero
+	pos->t = 0.0; // set observer reference time to zero
 	if(metric->type == PSI_METRIC_MINKOWSKI) {
-		beam->vel.t = sqrt(beam->vel.x*beam->vel.x 
-				+ beam->vel.y*beam->vel.y + beam->vel.z*beam->vel.z)/PSI_CLIGHT;
+		vel->t = sqrt(vel->x*vel->x 
+				+ vel->y*vel->y + vel->z*vel->z)/PSI_CLIGHT;
 	}
 	else if(metric->type == PSI_METRIC_FLRW) {
-		psi_get_phi_and_grad(&phi, &gradphi, beam->pos, metric);
-		beam->vel.t = sqrt((beam->vel.x*beam->vel.x + beam->vel.y*beam->vel.y 
-				+ beam->vel.z*beam->vel.z)*(1-2*phi)/(1+2*phi))/PSI_CLIGHT;
+		psi_get_phi_and_grad(&phi, &gradphi, *pos, metric);
+		vel->t = sqrt((vel->x*vel->x + vel->y*vel->y 
+				+ vel->z*vel->z)*(1-2*phi)/(1+2*phi))/PSI_CLIGHT;
 	}
 	else if(metric->type == PSI_METRIC_KERR) {
 
@@ -303,14 +379,14 @@ void psi_setup_ray_coords(psi_beam* beam, psi_rvec pos, psi_rvec vel, psi_metric
 		a = 0.7;
 
 		// set up preliminary stuff
-		r = beam->pos.x;
-		sintheta = sin(beam->pos.y);
-		costheta = cos(beam->pos.y);
+		r = pos->x;
+		sintheta = sin(pos->y);
+		costheta = cos(pos->y);
 		sigma = r*r + a*a*costheta*costheta;
 		delta = r*r - 2*M*r + a*a; 
-		beam->vel.t = (8*a*beam->vel.z*M*r*sintheta*sintheta*delta + sqrt(64*a*a*beam->vel.z*beam->vel.z*M*M*r*r*sintheta*sintheta*sintheta*sintheta*delta*delta - 
-			4*(2*M*r*delta - delta*sigma)*(2*a*a*beam->vel.z*beam->vel.z*M*r*sintheta*sintheta*sintheta*sintheta*delta + a*a*beam->vel.z*beam->vel.z*sintheta*sintheta*delta*sigma + 
-			beam->vel.z*beam->vel.z*r*r*sintheta*sintheta*delta*sigma + beam->vel.x*beam->vel.x*sigma*sigma + beam->vel.y*beam->vel.y*delta*sigma*sigma)))/(2.*(2*M*r*delta - delta*sigma));
+		vel->t = (8*a*vel->z*M*r*sintheta*sintheta*delta + sqrt(64*a*a*vel->z*vel->z*M*M*r*r*sintheta*sintheta*sintheta*sintheta*delta*delta - 
+			4*(2*M*r*delta - delta*sigma)*(2*a*a*vel->z*vel->z*M*r*sintheta*sintheta*sintheta*sintheta*delta + a*a*vel->z*vel->z*sintheta*sintheta*delta*sigma + 
+			vel->z*vel->z*r*r*sintheta*sintheta*delta*sigma + vel->x*vel->x*sigma*sigma + vel->y*vel->y*delta*sigma*sigma)))/(2.*(2*M*r*delta - delta*sigma));
 	}
 
 }
@@ -338,12 +414,12 @@ void psi_beamtrace(psi_grid* grid, psi_mesh* mesh, psi_int bstep, psi_metric* me
 	psi_rvec tpos[vpere], tvel[vpere], trbox[2];
 	psi_real tmass;
 
-	psi_4vec dx, dv, acc;
+	psi_4vec dx, dv, acc, vel;
 
 	if(grid->type != PSI_GRID_HPRING)
 		return;
 
-	psi_rvec obspos = {{20.,20.,20.}};
+	psi_rvec obspos = {{10.,9.,8.}};
 
 
 	// for every pixel in the image...
@@ -359,22 +435,36 @@ void psi_beamtrace(psi_grid* grid, psi_mesh* mesh, psi_int bstep, psi_metric* me
 		} 
 		if(fabs(center.z) > 0.1) continue;
 
+		// initialize the beam,
 		// make the position and velocity 4-vectors
-		// enforce ds^2 = 0 for the tangent vector 
-		psi_setup_ray_coords(&cbeam, obspos, center, metric);
+		// in the correct coordinates for the given metric
+		memset(&cbeam, 0, sizeof(psi_beam));
+		for(v = 0; v < 3; ++v)
+			psi_setup_ray_coords(&cbeam.verts[v].pos, &cbeam.verts[v].vel, cbeam.verts[v].info, obspos, center, metric);
+
+		for(v = 0; v < 3; ++v)
+			printf("setup 4-velocity, 4-pos = %f %f %f %f, 4 vel = %f %f %f %f \n", p, cbeam.verts[v].pos.t, cbeam.verts[v].pos.x, cbeam.verts[v].pos.y, cbeam.verts[v].pos.z, cbeam.verts[v].vel.t, cbeam.verts[v].vel.x, cbeam.verts[v].vel.y, cbeam.verts[v].vel.z);
 
 		// trace the beam
 		dalpha = 0.01;
-		for(terminate_beam = 0, step = 0; step < 100000 && !terminate_beam; ++step) {
+		for(terminate_beam = 0, step = 0; step < 1000 && !terminate_beam; ++step) {
+
+			//printf(" pixel %d, step %d\n", p, step);
 
 			// save ray samples for plotting
+			psi_4vec cpos;
+			for(ax = 0; ax < 4; ++ax) {
+				cpos.txyz[ax] = 0.0;
+				for(v = 0; v < 3; ++v)
+					cpos.txyz[ax] += 0.333333333333*cbeam.verts[v].pos.txyz[ax];
+			}
 			if(metric->type == PSI_METRIC_KERR) {
-				psi_real r = cbeam.pos.x;
-				psi_real sintheta = sin(cbeam.pos.y);
-				psi_real costheta = cos(cbeam.pos.y);
-				psi_real sinphi = sin(cbeam.pos.z);
-				psi_real cosphi = cos(cbeam.pos.z);
-				outar[p*ardim.j*ardim.k + step*ardim.k + 0] = cbeam.pos.t; // t
+				psi_real r = cpos.x;
+				psi_real sintheta = sin(cpos.y);
+				psi_real costheta = cos(cpos.y);
+				psi_real sinphi = sin(cpos.z);
+				psi_real cosphi = cos(cpos.z);
+				outar[p*ardim.j*ardim.k + step*ardim.k + 0] = cpos.t; // t
 				outar[p*ardim.j*ardim.k + step*ardim.k + 1] = r*sintheta*cosphi; 
 				outar[p*ardim.j*ardim.k + step*ardim.k + 2] = r*sintheta*sinphi;
 				outar[p*ardim.j*ardim.k + step*ardim.k + 3] = r*costheta;
@@ -382,12 +472,13 @@ void psi_beamtrace(psi_grid* grid, psi_mesh* mesh, psi_int bstep, psi_metric* me
 			}
 			else {
 				for(ax = 0; ax < 4; ++ax)
-					outar[p*ardim.j*ardim.k + step*ardim.k + ax] = cbeam.pos.txyz[ax];
+					outar[p*ardim.j*ardim.k + step*ardim.k + ax] = cpos.txyz[ax];
 			}
 
 			if(isnan(outar[p*ardim.j*ardim.k + step*ardim.k + 0])) {
 				break;
 			}
+
 
 			//printf("step %d, Metric = %d, pos = %f %f %f %f, vel = %f %f %f %f\n", step, metric->type, outar[p*ardim.j*ardim.k + step*ardim.k + 0],outar[p*ardim.j*ardim.k + step*ardim.k + 1],outar[p*ardim.j*ardim.k + step*ardim.k + 2],outar[p*ardim.j*ardim.k + step*ardim.k + 3], cbeam.vel.t,cbeam.vel.x,cbeam.vel.y,cbeam.vel.z);
 			//printf(" - alpha = %.5e, ds2 = %.5e\n", cbeam.alpha, psi_4dot(cbeam.vel, cbeam.vel, cbeam.pos, metric));
@@ -397,28 +488,40 @@ void psi_beamtrace(psi_grid* grid, psi_mesh* mesh, psi_int bstep, psi_metric* me
 		
 			// get the 4-acceleration
 			// calculate the displacement vector for this step
-			psi_get_4acc(&acc, cbeam.pos, cbeam.vel, metric);
-			for(ax = 0; ax < 4; ++ax) {
-				dx.txyz[ax] = dalpha*cbeam.vel.txyz[ax]; 
-				dv.txyz[ax] = dalpha*acc.txyz[ax]; 
-			} 
 
-			// update beam 4-vectors 
-			// TODO: forward Euler for now
-			cbeam.alpha += dalpha;
-			for(ax = 0; ax < 4; ++ax) {
-				cbeam.pos.txyz[ax] += dx.txyz[ax];
-				cbeam.vel.txyz[ax] += dv.txyz[ax];
-			} 
+			// for each vertex of the beam...
+			for(v = 0; v < 3; ++v) {
+			
+				psi_get_updated_4vel(&vel, cbeam.verts[v].pos, cbeam.verts[v].vel, dalpha, metric);
+				//printf("vert %d 4-vel = %f %f %f %f\n", v, vel.t, vel.x, vel.y, vel.z);
+
+				//printf("pixel %d, 4-pos = %f %f %f %f, 4 vel = %f %f %f %f \n", p, cbeam.verts[v].pos.t, cbeam.verts[v].pos.x, cbeam.verts[v].pos.y, cbeam.verts[v].pos.z, cbeam.verts[v].vel.t, cbeam.verts[v].vel.x, cbeam.verts[v].vel.y, cbeam.verts[v].vel.z);
+
+				// forward Euler 
+				//cbeam.alpha += dalpha;
+				for(ax = 0; ax < 4; ++ax) {
+					dx.txyz[ax] = dalpha*vel.txyz[ax]; //cbeam.vel.txyz[ax]; 
+				} 
+
+				// update beam 4-vectors 
+				// TODO: forward Euler for now
+				for(ax = 0; ax < 4; ++ax) {
+					cbeam.verts[v].pos.txyz[ax] += dx.txyz[ax];
+					//cbeam.verts[v].vel.txyz[ax] += dv.txyz[ax];
+				} 
+
+			
+			
+			}
 		
 			// check beam stopping criteria
-			if(cbeam.alpha > 100.0)
-				terminate_beam = 1;
+			//if(cbeam.alpha > 100.0)
+				//terminate_beam = 1;
 		}
 
 		// check the final 4-velocity to see that it is still null
 		//printf("Final velocity U*u = %.5e\n", psi_4dot(cbeam.vel, cbeam.vel, cbeam.pos, metric));
-		grid->fields[0][p] = psi_4dot(cbeam.vel, cbeam.vel, cbeam.pos, metric);
+		grid->fields[0][p] = 1.0;//psi_4dot(cbeam.vel, cbeam.vel, cbeam.pos, metric);
 
 #if 0
 

@@ -228,7 +228,6 @@ static int Mesh_init(Mesh *self, PyObject *args, PyObject *kwds) {
 			psi_printf("Number of particles does not match block dimensions!\n");
 			Py_RETURN_NONE;
 		}
-
 		npdims[1] = psi_verts_per_elem(PSI_MESH_LINEAR); 
 		self->connectivity = PyArray_SimpleNew(2, npdims, NPY_INT32);
 		psi_int* cptr = (psi_int*) PyArray_DATA(self->connectivity); 
