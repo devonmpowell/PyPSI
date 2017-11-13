@@ -1049,7 +1049,7 @@ static PyObject *PSI_phi(PyObject *self, PyObject *args, PyObject* kwds) {
 
 	// the return array
 	PyObject* retar = PyArray_ZEROS(cgrid.dim, npdims, NPY_DOUBLE, 0);
-	//psi_do_phi(&cgrid, PyArray_DATA(retar), Gn);
+	psi_do_phi(&cgrid, PyArray_DATA(retar), Gn);
 	return retar;
 }
 
