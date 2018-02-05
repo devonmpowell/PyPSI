@@ -129,6 +129,7 @@ class MeshTests(TestCase):
         print ' - conn =', mesh.connectivity.dtype, mesh.connectivity.shape
         print ' - box =', mesh.boxmin, mesh.boxmax
 
+
 # test basic PSIMOD functionality 
 class PSIMODTests(TestCase):
 

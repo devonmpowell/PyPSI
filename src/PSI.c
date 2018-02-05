@@ -176,19 +176,44 @@ static int Mesh_init(Mesh *self, PyObject *args, PyObject *kwds) {
 	psi_int ax, ndim;
 	psi_mesh cmesh;
 	psi_dvec nside;
-	PyObject *posar, *velar, *massar, *box, *n;
+	PyObject *posar, *velar, *massar, *box, *n, *connar;
 	char* cloader, *cfile;
 	npy_intp npdims[6];
 	npy_intp *dtmp; 
-	static char *kwlist[] = {"loader", "filename", "posar", "velar", "massar", "box", "n", NULL};
+	static char *kwlist[] = {"loader", "filename", "posar", "velar", "massar", "connar", "box", "n", NULL};
 
 	// parse arguments differently depending on what the grid type is
 	// certain grid types must correspond to certain arg patterns
-	if(!PyArg_ParseTupleAndKeywords(args, kwds, "s|sOOOOO", kwlist, &cloader, &cfile, &posar, &velar, &massar, &box, &n))
+	if(!PyArg_ParseTupleAndKeywords(args, kwds, "s|sOOOOOO", kwlist, &cloader, &cfile, &posar, &velar, &massar, &connar, &box, &n))
 			return -1;
 
 	// fill in all grid information as Python tuples
 	if(strcmp(cloader, "array") == 0) {
+
+		// TODO: check dtype!!!!
+
+		setbuf(stdout, NULL);
+
+		if(!PyArray_Check(posar))
+			return -1;
+
+		self->boxmin = PySequence_GetItem(box, 0); 
+		self->boxmax = PySequence_GetItem(box, 1); 
+
+		self->pos = posar;
+		Py_INCREF(posar);
+		self->vel = velar;
+		Py_INCREF(velar);
+		self->mass = massar;
+		Py_INCREF(massar);
+		self->connectivity = connar;
+		Py_INCREF(connar);
+
+
+		psi_printf("Using the array loader.\n");
+
+	}
+	else if(strcmp(cloader, "block") == 0) {
 
 		// TODO: check dtype!!!!
 

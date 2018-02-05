@@ -1,8 +1,19 @@
 from setuptools import setup, Extension
 import numpy as np
+import os
 
-
+#fftw_home = "/usr/local"
 fftw_home = "/scratch/users/dmpowel1/fftw-3.3.4"
+print "FFTW3 home directory (Enter for default %s):"%fftw_home,
+fftw_user_dir = raw_input()
+if os.path.isdir(fftw_user_dir):
+	fftw_home = fftw_user_dir
+elif fftw_user_dir.strip():
+	# if the user has enetered a string, but it is invalid
+	print "Error! Invalid directory."
+
+# TODO: check for libfftw3.a first 
+print " FFTW3 home dir:", fftw_home
 
 
 c_ext = Extension(
