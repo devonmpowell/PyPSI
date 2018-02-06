@@ -2,8 +2,8 @@ from setuptools import setup, Extension
 import numpy as np
 import os
 
-#fftw_home = "/usr/local"
-fftw_home = "/scratch/users/dmpowel1/fftw-3.3.4"
+fftw_home = "/usr/local/fftw3"
+#fftw_home = "/scratch/users/dmpowel1/fftw-3.3.4"
 print "FFTW3 home directory (Enter for default %s):"%fftw_home,
 fftw_user_dir = raw_input()
 if os.path.isdir(fftw_user_dir):

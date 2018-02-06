@@ -45,7 +45,7 @@ void psi_voxels(psi_grid* grid, psi_mesh* mesh) {
 	// TODO: user-issued max level
 	psi_tet_buffer tetbuf;
 	psi_real reftol = 0.1*grid->d.x;
-	psi_int max_lvl = 4;
+	psi_int max_lvl = 0; //4;
 	//if(order == 0) max_lvl = 0;
 	psi_tet_buffer_init(&tetbuf, reftol, max_lvl);
 
