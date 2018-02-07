@@ -27,10 +27,6 @@
 #define psi_free free
 #endif
 
-#ifdef HAVE_FFTW
-
-#endif
-
 // standard includes
 #include <stdio.h>
 #include <stdlib.h>

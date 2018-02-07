@@ -8,6 +8,9 @@
 #include "mesh.h"
 #include "skymap.h"
 #include "beamtrace.h"
+#ifdef HAVE_FFTW
+#include "fft.h"
+#endif
 
 #define MAKE_PY_NONE Py_BuildValue("")
 
@@ -1050,6 +1053,7 @@ static PyObject *PSI_voxels(PyObject *self, PyObject *args, PyObject* kwds) {
    Py_RETURN_NONE;
 }
 
+#ifdef HAVE_FFTW
 static PyObject *PSI_phi(PyObject *self, PyObject *args, PyObject* kwds) {
 
 	psi_grid cgrid;
@@ -1077,6 +1081,7 @@ static PyObject *PSI_phi(PyObject *self, PyObject *args, PyObject* kwds) {
 	psi_do_phi(&cgrid, PyArray_DATA(retar), Gn);
 	return retar;
 }
+#endif
 
 
 /////////////////////////////////////////////////////////////
@@ -1094,7 +1099,9 @@ static PyObject *PSI_phi(PyObject *self, PyObject *args, PyObject* kwds) {
 static PyMethodDef module_methods[] = {
    	{"skymap", (PyCFunction)PSI_skymap, METH_KEYWORDS, "Makes a skymap"},
    	{"voxels", (PyCFunction)PSI_voxels, METH_KEYWORDS, "Voxelizes"},
+#ifdef HAVE_FFTW
    	{"phi", (PyCFunction)PSI_phi, METH_KEYWORDS, "phi"},
+#endif
    	{"beamtrace", (PyCFunction)PSI_beamtrace, METH_KEYWORDS, "beamtrace"},
     {NULL, NULL, 0, NULL}
 };
