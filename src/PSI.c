@@ -12,8 +12,6 @@
 #include "fft.h"
 #endif
 
-#define MAKE_PY_NONE Py_BuildValue("")
-
 
 /////////////////////////////////////////////////////////////
 //   Define Python type structs and conversion functions up front 
@@ -185,6 +183,10 @@ static int Mesh_init(Mesh *self, PyObject *args, PyObject *kwds) {
 	npy_intp *dtmp; 
 	static char *kwlist[] = {"loader", "filename", "posar", "velar", "massar", "connar", "box", "n", NULL};
 
+
+	// TODO: init all arrays to NULL
+	box = NULL;
+
 	// parse arguments differently depending on what the grid type is
 	// certain grid types must correspond to certain arg patterns
 	if(!PyArg_ParseTupleAndKeywords(args, kwds, "s|sOOOOOO", kwlist, &cloader, &cfile, &posar, &velar, &massar, &connar, &box, &n))
@@ -195,13 +197,20 @@ static int Mesh_init(Mesh *self, PyObject *args, PyObject *kwds) {
 
 		// TODO: check dtype!!!!
 
-		setbuf(stdout, NULL);
-
 		if(!PyArray_Check(posar))
 			return -1;
 
-		self->boxmin = PySequence_GetItem(box, 0); 
-		self->boxmax = PySequence_GetItem(box, 1); 
+		// TODO: check for valid box in a dedicated function
+		// TODO: more rigorous check
+		if(PySequence_Check(box)) {
+			self->boxmin = PySequence_GetItem(box, 0); 
+			self->boxmax = PySequence_GetItem(box, 1); 
+		}
+		else {
+			self->boxmin = Py_None; 
+			self->boxmax = Py_None;
+		}
+
 
 		self->pos = posar;
 		Py_INCREF(posar);
@@ -211,9 +220,6 @@ static int Mesh_init(Mesh *self, PyObject *args, PyObject *kwds) {
 		Py_INCREF(massar);
 		self->connectivity = connar;
 		Py_INCREF(connar);
-
-
-		psi_printf("Using the array loader.\n");
 
 	}
 	else if(strcmp(cloader, "block") == 0) {
@@ -308,8 +314,8 @@ static int Mesh_init(Mesh *self, PyObject *args, PyObject *kwds) {
 			self->boxmax = Py_BuildValue("(ddd)", cmesh.box[1].x, cmesh.box[1].y, cmesh.box[1].z);
 		}
 		else {
-			self->boxmin = MAKE_PY_NONE;
-			self->boxmax = MAKE_PY_NONE;
+			self->boxmin = Py_None;
+			self->boxmax = Py_None;
 		}
 
 		cmesh.pos = PyArray_DATA((PyArrayObject*)self->pos);
@@ -322,92 +328,6 @@ static int Mesh_init(Mesh *self, PyObject *args, PyObject *kwds) {
 			return -1;
 
 	}
-	else if(strcmp(cloader, "hacky_test") == 0) {
-
-		psi_printf("Using the hacked test vertices.\n");
-
-		// set up the cmesh...
-		cmesh.npart = 8; 
-		cmesh.nelem = 2; 
-		cmesh.periodic = 1;
-		cmesh.elemtype = PSI_MESH_SIMPLEX;
-		cmesh.dim = 3; 
-		for(ax = 0; ax < 3; ++ax) {
-			cmesh.box[0].xyz[ax] = 0.0;
-			cmesh.box[1].xyz[ax] = 40.0; 
-		}
-
-		// wrap the cmesh data in a cubical Numpy array
-		npdims[0] = cmesh.npart;
-		npdims[1] = cmesh.dim;
-		self->pos = PyArray_SimpleNew(2, npdims, NPY_DOUBLE);
-		self->vel = PyArray_SimpleNew(2, npdims, NPY_DOUBLE);
-		self->mass = PyArray_SimpleNew(1, npdims, NPY_DOUBLE);
-		npdims[0] = cmesh.nelem;
-		npdims[1] = psi_verts_per_elem(cmesh.elemtype); 
-		self->connectivity = PyArray_SimpleNew(2, npdims, NPY_INT32);
-		if(!self->pos || !self->vel || !self->connectivity) {
-			psi_printf("new array fail!\n");
-			return -1;
-		} 
-		if(cmesh.periodic) {
-			self->boxmin = Py_BuildValue("(ddd)", cmesh.box[0].x, cmesh.box[0].y, cmesh.box[0].z);
-			self->boxmax = Py_BuildValue("(ddd)", cmesh.box[1].x, cmesh.box[1].y, cmesh.box[1].z);
-		}
-		else {
-			self->boxmin = MAKE_PY_NONE;
-			self->boxmax = MAKE_PY_NONE;
-		}
-
-		cmesh.pos = PyArray_DATA((PyArrayObject*)self->pos);
-		cmesh.vel = PyArray_DATA((PyArrayObject*)self->vel);
-		cmesh.mass = PyArray_DATA((PyArrayObject*)self->mass);
-		cmesh.connectivity = PyArray_DATA((PyArrayObject*)self->connectivity);
-	
-		//  fill in the vertex pos, mass, vel...
-		cmesh.mass[0] = 1.0;
-		cmesh.mass[1] = 1.0;
-		cmesh.mass[2] = 1.0;
-		cmesh.mass[3] = 1.0;
-		cmesh.mass[4] = 1.0;
-		cmesh.mass[5] = 1.0;
-		cmesh.mass[6] = 1.0;
-		cmesh.mass[7] = 1.0;
-		cmesh.pos[0].x = 17.0;
-		cmesh.pos[0].y = 17.0;
-		cmesh.pos[0].z = 17.0;
-		cmesh.pos[1].x = 29.0;
-		cmesh.pos[1].y = 17.0;
-		cmesh.pos[1].z = 17.0;
-		cmesh.pos[2].x = 17.0;
-		cmesh.pos[2].y = 29.0;
-		cmesh.pos[2].z = 17.0;
-		cmesh.pos[3].x = 17.0;
-		cmesh.pos[3].y = 17.0;
-		cmesh.pos[3].z = 29.0;
-		cmesh.pos[4].x = 25.0;
-		cmesh.pos[4].y = 25.0;
-		cmesh.pos[4].z = 25.0;
-		cmesh.pos[5].x = 9.0;
-		cmesh.pos[5].y = 25.0;
-		cmesh.pos[5].z = 25.0;
-		cmesh.pos[6].x = 25.0;
-		cmesh.pos[6].y = 9.0;
-		cmesh.pos[6].z = 25.0;
-		cmesh.pos[7].x = 25.0;
-		cmesh.pos[7].y = 25.0;
-		cmesh.pos[7].z = 9.0;
-		cmesh.connectivity[0] = 0;
-		cmesh.connectivity[1] = 1;
-		cmesh.connectivity[2] = 2;
-		cmesh.connectivity[3] = 3;
-		cmesh.connectivity[4] = 4;
-		cmesh.connectivity[5] = 5;
-		cmesh.connectivity[6] = 6;
-		cmesh.connectivity[7] = 7;
-
-	}
-
 	else {
 		psi_printf("Bad loader: %s\n", cloader);
 		return -1;
@@ -513,10 +433,10 @@ static PyObject* Grid_getCellGeometry(Grid *self, PyObject *args, PyObject *kwds
 	// see if it is a sequence or None to indicate all cells
 	bstep = 1;
 	if(!PyArg_ParseTupleAndKeywords(args, kwds, "O|i", kwlist, &pyind, &bstep))
-		return MAKE_PY_NONE;
+		Py_RETURN_NONE;
 	allcells = (pyind == Py_None)? 1 : 0; 
 	if(!allcells && !PySequence_Check(pyind)) 
-		return MAKE_PY_NONE;
+		Py_RETURN_NONE;
 
 
 	// parse the grid to the simple C struct
@@ -556,7 +476,7 @@ static PyObject* Grid_getCellGeometry(Grid *self, PyObject *args, PyObject *kwds
 				seq = PySequence_Fast(pyind, "not a sequence");
 				slen = PySequence_Fast_GET_SIZE(seq);
 				if(slen <= 0 || !PyInt_Check(PySequence_Fast_GET_ITEM(seq, 0))) 
-					return MAKE_PY_NONE;
+					Py_RETURN_NONE;
 			}
 	
 			// create the output array in the correct shape (flat for hp)
@@ -582,7 +502,7 @@ static PyObject* Grid_getCellGeometry(Grid *self, PyObject *args, PyObject *kwds
 				// set the array elements 
 				if(!psi_grid_get_cell_geometry(&cgrid, grind, bstep, boundary, &center, &vol)) {
 					printf("bad geometry\n");
-					return MAKE_PY_NONE;
+					Py_RETURN_NONE;
 				} 
 				for(ax = 0; ax < 3; ++ax)
 					cvdata[3*i+ax] = center.xyz[ax];
@@ -597,7 +517,7 @@ static PyObject* Grid_getCellGeometry(Grid *self, PyObject *args, PyObject *kwds
 
 		default:
 			psi_printf("Bad grid type\n");
-			return MAKE_PY_NONE;
+			Py_RETURN_NONE;
 	}
 	
 	return Py_BuildValue("(NNN)", PyArray_Return((PyArrayObject*)cverts), 
@@ -656,8 +576,8 @@ static int Grid_init(Grid *self, PyObject *args, PyObject *kwds) {
 		npix = 12*nside*nside;
 		self->n = Py_BuildValue("(iii)", order, nside, npix); 
 		self->d = Py_BuildValue("d", FOUR_PI/npix); // the nominal pixel area 
-		self->winmin = MAKE_PY_NONE;
-		self->winmax = MAKE_PY_NONE;
+		self->winmin = Py_None;
+		self->winmax = Py_None;
 		npdims[0] = npix;
 		dim = 1;
 		Py_XDECREF(pytype);
@@ -752,6 +672,251 @@ static PyTypeObject GridType = {
     Grid_new,                 /* tp_new */
 };
 
+
+
+/////////////////////////////////////////////////////////////
+//     PSI module functions 
+/////////////////////////////////////////////////////////////
+
+static PyObject *PSI_skymap(PyObject *self, PyObject *args, PyObject* kwds) {
+
+	psi_grid cgrid;
+	psi_mesh cmesh;
+	psi_int bstep, mode;
+	Mesh* mesh;
+	Grid* grid;	
+	//npy_intp* npdims;
+	npy_intp nverts;
+	static char *kwlist[] = {"grid", "mesh", "bstep", "mode", NULL};
+
+	// parse PyArgs
+	bstep = 1;
+	mode = PSI_SKYMAP_RHO_LINEAR;
+	if(!PyArg_ParseTupleAndKeywords(args, kwds, "OO|ii", kwlist, &grid, &mesh, &bstep, &mode))
+		Py_RETURN_NONE;
+
+	// make C structs, check them
+	PSI_Grid2grid(grid, &cgrid);
+	PSI_Mesh2mesh(mesh, &cmesh);
+	if(cgrid.type != PSI_GRID_HPRING || cgrid.dim != 3) 
+		Py_RETURN_NONE;
+	if(cmesh.dim != cgrid.dim)
+		Py_RETURN_NONE;
+
+	// run the skymap
+	printf("----Making hpring skymap, mode = %d-----\n", mode);
+	psi_skymap(&cgrid, &cmesh, bstep, mode);
+	Py_RETURN_NONE;
+}
+
+
+
+static PyObject *PSI_beamtrace(PyObject *self, PyObject *args, PyObject* kwds) {
+
+	psi_grid cgrid;
+	psi_mesh cmesh;
+	psi_metric cmetric;
+	psi_int bstep, mode;
+	Metric* metric;
+	Grid* grid;	
+	psi_rvec obspos, obsvel;
+	psi_dvec gdim;
+	npy_intp npdims[4];
+	npy_intp nverts;
+	static char *kwlist[] = {"grid", "metric", "obspos", "obsvel", NULL};
+
+	setbuf(stdout, NULL);
+
+	printf("---- GR beamtracing... -----\n");
+
+	bstep = 1;
+	mode = PSI_SKYMAP_RHO_LINEAR;
+	if(!PyArg_ParseTupleAndKeywords(args, kwds, "OO|(ddd)(ddd)", kwlist, &grid, &metric, &obspos.x, &obspos.y, &obspos.z, &obsvel.x, &obsvel.y, &obsvel.z))
+		Py_RETURN_NONE;
+
+	PSI_Grid2grid(grid, &cgrid);
+	if(cgrid.type != PSI_GRID_HPRING || cgrid.dim != 3) 
+		Py_RETURN_NONE;
+
+	printf("metric2metric\n");
+
+	PSI_Metric2metric(metric, &cmetric);
+
+	printf("metric2metric done\n");
+
+	printf("grid.nside = %d, metric type = %d, obspos = %f %f %f\n", cgrid.n.j, cmetric.type, obspos.x, obspos.y, obspos.z);
+
+
+
+
+	npdims[0] = cgrid.n.k;
+	npdims[1] = 100024; 
+	npdims[2] = 4; 
+	gdim.i = npdims[0];
+	gdim.j = npdims[1];
+	gdim.k = npdims[2];
+	PyObject* rayinfo = PyArray_SimpleNew(3, npdims, NPY_DOUBLE);
+	psi_real* infar = PyArray_DATA((PyArrayObject*)rayinfo);
+
+	psi_beamtrace(&cgrid, &cmesh, bstep, &cmetric, infar, gdim);
+
+   /* Do your stuff here. */
+   //Py_RETURN_NONE;
+   return rayinfo;
+}
+
+
+
+
+static PyObject *PSI_voxels(PyObject *self, PyObject *args, PyObject* kwds) {
+
+	psi_int mode, maxlvl;
+	psi_real reftol;
+	char* modestr;
+	psi_grid cgrid;
+	psi_mesh cmesh;
+	Mesh* mesh;
+	Grid* grid;	
+	npy_intp nverts;
+	static char *kwlist[] = {"grid", "mesh", "mode", "refine_tolerance", "refine_max_lvl", NULL};
+
+	// defaults
+	modestr = "density";
+	reftol = 1.0;
+	maxlvl = 0;
+
+	if(!PyArg_ParseTupleAndKeywords(args, kwds, "OO|sdi", kwlist, &grid, &mesh, &modestr, &reftol, &maxlvl))
+		Py_RETURN_NONE;
+
+	// extract C pointers and such
+	PSI_Grid2grid(grid, &cgrid);
+	PSI_Mesh2mesh(mesh, &cmesh);
+	if(cgrid.type != PSI_GRID_CART) 
+		Py_RETURN_NONE;
+	if(cmesh.dim != cgrid.dim)
+		Py_RETURN_NONE;
+
+	// parse the deposit mode
+	if(strcmp(modestr, "density") == 0)
+		mode = PSI_MODE_DENSITY;
+	else if(strcmp(modestr, "annihilation") == 0)
+		mode = PSI_MODE_ANNIHILATION;
+	else {
+		PyErr_SetString(PyExc_ValueError, "Invalid mode for PSI_voxels");
+		Py_RETURN_NONE;
+	}
+
+	// call the C function
+	// TODO: allow passing of a user-made r* tree
+	psi_voxels(&cgrid, &cmesh, NULL, mode, reftol, maxlvl);
+
+	Py_RETURN_NONE;
+}
+
+static PyObject *PSI_phi(PyObject *self, PyObject *args, PyObject* kwds) {
+
+	psi_int ax;
+	psi_grid cgrid;
+	psi_real Gn;
+	Grid* grid;	
+	static char *kwlist[] = {"grid", "Gn", NULL};
+
+#ifdef HAVE_FFTW
+	Gn = 1.0;
+	if(!PyArg_ParseTupleAndKeywords(args, kwds, "O|d", kwlist, &grid, &Gn))
+		Py_RETURN_NONE;
+
+	PSI_Grid2grid(grid, &cgrid);
+	if(cgrid.type != PSI_GRID_CART) 
+		Py_RETURN_NONE;
+
+	npy_intp npdims[3];
+	for(ax = 0; ax < 3; ++ax)
+		npdims[ax] = cgrid.n.ijk[ax];
+
+	// the return array
+	PyObject* retar = PyArray_ZEROS(cgrid.dim, npdims, NPY_DOUBLE, 0);
+	psi_do_phi(&cgrid, PyArray_DATA(retar), Gn);
+	return retar;
+#else
+	char buf[128];
+	sprintf(buf, "PSI was compiled without FFTW. Function %s does nothing.", __FUNCTION__);
+	PyErr_SetString(PyExc_RuntimeWarning, buf);
+	Py_RETURN_NONE;
+#endif
+
+}
+
+
+/////////////////////////////////////////////////////////////
+//     PSI module init 
+/////////////////////////////////////////////////////////////
+
+/* Docstrings */
+//static char module_docstring[] = "PSI.";
+//static char PSI_docstring[] =
+    //"Calculate the chi-squared of some data given a model.";
+#ifndef PyMODINIT_FUNC	/* declarations for DLL import/export */
+#define PyMODINIT_FUNC void
+#endif
+
+static PyMethodDef module_methods[] = {
+   	{"skymap", (PyCFunction)PSI_skymap, METH_KEYWORDS, "Makes a skymap"},
+   	{"voxels", (PyCFunction)PSI_voxels, METH_KEYWORDS, "Voxelizes"},
+   	{"phi", (PyCFunction)PSI_phi, METH_KEYWORDS, "phi"},
+   	{"beamtrace", (PyCFunction)PSI_beamtrace, METH_KEYWORDS, "beamtrace"},
+    {NULL, NULL, 0, NULL}
+};
+
+PyMODINIT_FUNC initPSI(void) {
+    PyObject* m;
+    m = Py_InitModule3("PSI", module_methods,
+	       "PSI, the phase space intersector");
+    if(!m) return;
+
+	// import numpy functionality
+	_import_array();
+
+	// add the mesh type
+	if(PyType_Ready(&MeshType) < 0) return;
+	Py_INCREF(&MeshType);
+	PyModule_AddObject(m, "Mesh", (PyObject*)&MeshType);
+
+
+	// add the grid type
+	if(PyType_Ready(&GridType) < 0) return;
+	Py_INCREF(&GridType);
+	PyModule_AddObject(m, "Grid", (PyObject*)&GridType);
+
+#if 0
+	// add the metric type
+	if(PyType_Ready(&MetricType) < 0) return;
+	Py_INCREF(&MetricType);
+	PyModule_AddObject(m, "Metric", (PyObject*)&MetricType);
+#endif
+
+
+	// TODO: add macroed constants to the Python module 
+}
+
+#endif // PYMODULE
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#if 0
+
 /////////////////////////////////////////////////////////////
 //     Metric
 /////////////////////////////////////////////////////////////
@@ -832,8 +997,8 @@ static int Metric_init(Metric *self, PyObject *args, PyObject *kwds) {
 		npix = 12*nside*nside;
 		self->n = Py_BuildValue("(iii)", order, nside, npix); 
 		self->d = Py_BuildValue("d", FOUR_PI/npix); // the nominal pixel area 
-		self->winmin = MAKE_PY_NONE;
-		self->winmax = MAKE_PY_NONE;
+		self->winmin = Py_None;
+		self->winmax = Py_None;
 		npdims[0] = npix;
 		dim = 1;
 		Py_XDECREF(pytype);
@@ -933,206 +1098,6 @@ static PyTypeObject MetricType = {
 
 
 
-
-/////////////////////////////////////////////////////////////
-//     PSI module functions 
-/////////////////////////////////////////////////////////////
-
-static PyObject *PSI_skymap(PyObject *self, PyObject *args, PyObject* kwds) {
-
-	psi_grid cgrid;
-	psi_mesh cmesh;
-	psi_int bstep, mode;
-	Mesh* mesh;
-	Grid* grid;	
-	//npy_intp* npdims;
-	npy_intp nverts;
-	static char *kwlist[] = {"grid", "mesh", "bstep", "mode", NULL};
-
-	// parse PyArgs
-	bstep = 1;
-	mode = PSI_SKYMAP_RHO_LINEAR;
-	if(!PyArg_ParseTupleAndKeywords(args, kwds, "OO|ii", kwlist, &grid, &mesh, &bstep, &mode))
-		return MAKE_PY_NONE;
-
-	// make C structs, check them
-	PSI_Grid2grid(grid, &cgrid);
-	PSI_Mesh2mesh(mesh, &cmesh);
-	if(cgrid.type != PSI_GRID_HPRING || cgrid.dim != 3) 
-		Py_RETURN_NONE;
-	if(cmesh.dim != cgrid.dim)
-		Py_RETURN_NONE;
-
-	// run the skymap
-	printf("----Making hpring skymap, mode = %d-----\n", mode);
-	psi_skymap(&cgrid, &cmesh, bstep, mode);
-	Py_RETURN_NONE;
-}
-
-
-
-static PyObject *PSI_beamtrace(PyObject *self, PyObject *args, PyObject* kwds) {
-
-	psi_grid cgrid;
-	psi_mesh cmesh;
-	psi_metric cmetric;
-	psi_int bstep, mode;
-	Metric* metric;
-	Grid* grid;	
-	psi_rvec obspos, obsvel;
-	psi_dvec gdim;
-	npy_intp npdims[4];
-	npy_intp nverts;
-	static char *kwlist[] = {"grid", "metric", "obspos", "obsvel", NULL};
-
-	setbuf(stdout, NULL);
-
-	printf("---- GR beamtracing... -----\n");
-
-	bstep = 1;
-	mode = PSI_SKYMAP_RHO_LINEAR;
-	if(!PyArg_ParseTupleAndKeywords(args, kwds, "OO|(ddd)(ddd)", kwlist, &grid, &metric, &obspos.x, &obspos.y, &obspos.z, &obsvel.x, &obsvel.y, &obsvel.z))
-		return MAKE_PY_NONE;
-
-	PSI_Grid2grid(grid, &cgrid);
-	if(cgrid.type != PSI_GRID_HPRING || cgrid.dim != 3) 
-		Py_RETURN_NONE;
-
-	printf("metric2metric\n");
-
-	PSI_Metric2metric(metric, &cmetric);
-
-	printf("metric2metric done\n");
-
-	printf("grid.nside = %d, metric type = %d, obspos = %f %f %f\n", cgrid.n.j, cmetric.type, obspos.x, obspos.y, obspos.z);
-
-
-
-
-	npdims[0] = cgrid.n.k;
-	npdims[1] = 100024; 
-	npdims[2] = 4; 
-	gdim.i = npdims[0];
-	gdim.j = npdims[1];
-	gdim.k = npdims[2];
-	PyObject* rayinfo = PyArray_SimpleNew(3, npdims, NPY_DOUBLE);
-	psi_real* infar = PyArray_DATA((PyArrayObject*)rayinfo);
-
-	psi_beamtrace(&cgrid, &cmesh, bstep, &cmetric, infar, gdim);
-
-   /* Do your stuff here. */
-   //Py_RETURN_NONE;
-   return rayinfo;
-}
-
-
-
-
-static PyObject *PSI_voxels(PyObject *self, PyObject *args, PyObject* kwds) {
-
-	psi_grid cgrid;
-	psi_mesh cmesh;
-	Mesh* mesh;
-	Grid* grid;	
-	//npy_intp* npdims;
-	npy_intp nverts;
-	static char *kwlist[] = {"grid", "mesh", NULL};
-
-	if(!PyArg_ParseTupleAndKeywords(args, kwds, "OO", kwlist, &grid, &mesh))
-		return MAKE_PY_NONE;
-
-	PSI_Grid2grid(grid, &cgrid);
-	PSI_Mesh2mesh(mesh, &cmesh);
-	if(cgrid.type != PSI_GRID_CART) 
-		Py_RETURN_NONE;
-	if(cmesh.dim != cgrid.dim)
-		Py_RETURN_NONE;
-
-	psi_voxels(&cgrid, &cmesh);
-
-   Py_RETURN_NONE;
-}
-
-#ifdef HAVE_FFTW
-static PyObject *PSI_phi(PyObject *self, PyObject *args, PyObject* kwds) {
-
-	psi_grid cgrid;
-	psi_real Gn;
-	Grid* grid;	
-
-	static char *kwlist[] = {"grid", "Gn", NULL};
-
-	Gn = 1.0;
-	if(!PyArg_ParseTupleAndKeywords(args, kwds, "O|d", kwlist, &grid, &Gn))
-		return MAKE_PY_NONE;
-
-
-	PSI_Grid2grid(grid, &cgrid);
-	if(cgrid.type != PSI_GRID_CART) 
-		Py_RETURN_NONE;
-
-	psi_int ax;
-	npy_intp npdims[3];
-	for(ax = 0; ax < 3; ++ax)
-		npdims[ax] = cgrid.n.ijk[ax];
-
-	// the return array
-	PyObject* retar = PyArray_ZEROS(cgrid.dim, npdims, NPY_DOUBLE, 0);
-	psi_do_phi(&cgrid, PyArray_DATA(retar), Gn);
-	return retar;
-}
 #endif
 
 
-/////////////////////////////////////////////////////////////
-//     PSI module init 
-/////////////////////////////////////////////////////////////
-
-/* Docstrings */
-//static char module_docstring[] = "PSI.";
-//static char PSI_docstring[] =
-    //"Calculate the chi-squared of some data given a model.";
-#ifndef PyMODINIT_FUNC	/* declarations for DLL import/export */
-#define PyMODINIT_FUNC void
-#endif
-
-static PyMethodDef module_methods[] = {
-   	{"skymap", (PyCFunction)PSI_skymap, METH_KEYWORDS, "Makes a skymap"},
-   	{"voxels", (PyCFunction)PSI_voxels, METH_KEYWORDS, "Voxelizes"},
-#ifdef HAVE_FFTW
-   	{"phi", (PyCFunction)PSI_phi, METH_KEYWORDS, "phi"},
-#endif
-   	{"beamtrace", (PyCFunction)PSI_beamtrace, METH_KEYWORDS, "beamtrace"},
-    {NULL, NULL, 0, NULL}
-};
-
-PyMODINIT_FUNC initPSI(void) {
-    PyObject* m;
-    m = Py_InitModule3("PSI", module_methods,
-	       "Example module that creates an extension type.");
-    if(!m) return;
-
-	// import numpy functionality
-	_import_array();
-
-	// add the mesh type
-	if(PyType_Ready(&MeshType) < 0) return;
-	Py_INCREF(&MeshType);
-	PyModule_AddObject(m, "Mesh", (PyObject*)&MeshType);
-
-
-	// add the grid type
-	if(PyType_Ready(&GridType) < 0) return;
-	Py_INCREF(&GridType);
-	PyModule_AddObject(m, "Grid", (PyObject*)&GridType);
-
-	// add the metric type
-	if(PyType_Ready(&MetricType) < 0) return;
-	Py_INCREF(&MetricType);
-	PyModule_AddObject(m, "Metric", (PyObject*)&MetricType);
-
-
-	// TODO: add macroed constants to the Python module 
-}
-
-#endif // PYMODULE

@@ -73,6 +73,11 @@ typedef union {
 #define PSI_SAMPLING_CIC 2
 #define PSI_SAMPLING_NGP 2
 
+
+// mode - decay or annihilation
+#define PSI_MODE_DENSITY 0
+#define PSI_MODE_ANNIHILATION 1
+
 //void psi_voxels(psi_grid* grid, psi_mesh* mesh);
 
 

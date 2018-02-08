@@ -190,27 +190,15 @@ psi_real psi_orient_tet(psi_rvec* pos, psi_rvec* vel) {
 
 
 
-#if 0
-
 //void psi_voxelize_annihilation(psi_rvec* pos[2], psi_rvec* vel[2], psi_real mass[2], psi_dest_grid* dest_grid) {
-void psi_voxelize_annihilation(psi_rvec* pos0, psi_rvec* vel0, psi_real mass0, psi_rvec* rbox0, 
-		psi_rvec* pos1, psi_rvec* vel1, psi_real mass1, psi_rvec* rbox1, psi_dest_grid* dest_grid) {
+void psi_voxelize_annihilation(psi_rvec* pos0, psi_rvec* vel0, psi_real mass0, 
+		psi_rvec* pos1, psi_rvec* vel1, psi_real mass1, psi_rvec* mbox, psi_grid* grid) {
 
 	psi_int i, gridind;
-	psi_rvec mbox[2];
 	psi_real moments[10];
 	psi_poly curpoly;
 	psi_plane faces[PSI_NDIM+1];
 	psi_voxels vox;
-
-	// make sure the two tets intersect
-	// compute their mutual bounding box
-	for(i = 0; i < PSI_NDIM; ++i) {
-		if(rbox0[0].xyz[i] > rbox1[1].xyz[i]) return; 
-		if(rbox0[1].xyz[i] < rbox1[0].xyz[i]) return;
-		mbox[0].xyz[i] = max(rbox0[0].xyz[i], rbox1[0].xyz[i]);
-		mbox[1].xyz[i] = min(rbox0[1].xyz[i], rbox1[1].xyz[i]);
-	}
 
 	// get the volume and correctly orient the tets
 	// TODO: volume for degenerate tets?
@@ -225,11 +213,13 @@ void psi_voxelize_annihilation(psi_rvec* pos0, psi_rvec* vel0, psi_real mass0, p
 	psi_clip(&curpoly, faces, 4);
 
 	// voxelize
-	psi_voxels_init(&vox, &curpoly, mbox, dest_grid);
+	psi_voxels_init(&vox, &curpoly, mbox, grid);
 	while(psi_voxels_next(&vox, moments, &gridind)) {
-		dest_grid->fields[PSI_GRID_M][gridind] += 0.5*rho0*rho1*vol0*moments[0];
+		grid->fields[PSI_GRID_M][gridind] += 0.5*rho0*rho1*vol0*moments[0];
 	}
 }
+
+#if 0
 
 
 void psi_point_sample_tet(psi_rvec* pos, psi_rvec* vel, psi_real mass, psi_rvec* rbox, psi_dest_grid* grid) {

@@ -11,7 +11,7 @@
 
 #include "psi.h"
 
-//#include "rtree.h"
+#include "rtree.h"
 #include "grid.h"
 #include "mesh.h"
 #include "refine.h"
@@ -26,40 +26,70 @@ int psi_aabb_ixn(psi_rvec* rbox0, psi_rvec* rbox1, psi_rvec* ixn);
 void psi_make_ghosts(psi_rvec* elems, psi_rvec* rboxes, psi_int* num, psi_int stride, psi_rvec* window, psi_mesh* mesh);
 
 // psi implementation 
-void psi_voxels(psi_grid* grid, psi_mesh* mesh) {
+void psi_voxels(psi_grid* grid, psi_mesh* mesh, psi_rtree* rtree, psi_int mode, psi_real reftol, psi_int max_ref_lvl) {
 
 
-	psi_int e, g, t, v, nghosts, tind;
-	psi_real tmass;
+	psi_int e, g, t, v, nghosts, tind, internal_rtree, e1, t1;
 
 	// a local copy of the position in case it is modified due to periodicity
 	psi_int vpere = mesh->elemtype;
-	psi_rvec tpos[vpere], tvel[vpere];
+	psi_rvec tpos[vpere], tvel[vpere], tpos1[vpere], tvel1[vpere];
+	psi_real tmass, tmass1;
 	psi_rvec trbox[2];
+	psi_rvec *pos0, *vel0, *pos1, *vel1;
+	psi_rvec rbox0[2], rbox1[2], mbox[2];
+	psi_real mass0, mass1;
 
 	// ghost tetrahedra for handling periodicity
 	psi_rvec gpos[(1<<mesh->dim)*(mesh->dim+1)];
 	psi_rvec grbox[(1<<mesh->dim)*2];
 
 	// constant-size buffer for max refinement level
-	// TODO: user-issued max level
-	psi_tet_buffer tetbuf;
-	psi_real reftol = 0.1*grid->d.x;
-	psi_int max_lvl = 0; //4;
-	//if(order == 0) max_lvl = 0;
-	psi_tet_buffer_init(&tetbuf, reftol, max_lvl);
+	psi_rtree myrtree;
+	psi_rtree_query qry;
+	psi_tet_buffer tetbuf, tetbuf1;
+	psi_tet_buffer_init(&tetbuf, reftol, max_ref_lvl);
+	if(mode == PSI_MODE_ANNIHILATION)
+		psi_tet_buffer_init(&tetbuf1, reftol, max_ref_lvl);
+
+	setbuf(stdout, NULL);
+
+	printf("Called psi_voxels, mode = %d, reftol = %f, max_lvl = %d\n", mode, reftol, max_ref_lvl);
+
+	// check to see if we must build an rtree for this function
+	internal_rtree = (mode == PSI_MODE_ANNIHILATION && rtree == NULL);
+	if(internal_rtree) {
+		printf("No R*-tree given. Building one now...\n");
+
+		// create and load the rtree
+		rtree = &myrtree; 
+		psi_rtree_init(rtree, 2*mesh->nelem);
+		for(e = 0; e < mesh->nelem; ++e) {
+
+			// make it periodic, get its bounding box, and check it against the grid
+			//mtot += mesh->mass[e]; 
+			for(v = 0; v < vpere; ++v) {
+				tind = mesh->connectivity[e*vpere+v];
+				tpos[v] = mesh->pos[tind];
+			}
+	
+			// insert each element into the tree if it is in the projection window
+			if(!psi_aabb_periodic(tpos, trbox, grid->window, mesh)) continue;
+			psi_rtree_insert(rtree, trbox, e);
+		}
+		printf("Done.\n");
+	}
 
 	// loop over all elements
 	for(e = 0; e < mesh->nelem; ++e) {
 
 		// a local copy of the element, in case it's modified
 		// make it periodic, get its bounding box, and check it against the grid
-		tmass = 0.0;
+		tmass = mesh->mass[e]; 
 		for(v = 0; v < vpere; ++v) {
 			tind = mesh->connectivity[e*vpere+v];
 			tpos[v] = mesh->pos[tind];
 			tvel[v] = mesh->vel[tind];
-			tmass += (1.0/vpere)*mesh->mass[tind]; // TODO: hack
 		}
 		if(!psi_aabb_periodic(tpos, trbox, grid->window, mesh)) continue;
 
@@ -68,141 +98,77 @@ void psi_voxels(psi_grid* grid, psi_mesh* mesh) {
 		psi_tet_buffer_refine(&tetbuf, tpos, tvel, tmass, mesh->elemtype);
 		for(t = 0; t < tetbuf.num; ++t) {
 
-			// copy the position to the ghost array and compute its aabb
-			memcpy(gpos, &tetbuf.pos[(mesh->dim+1)*t], (mesh->dim+1)*sizeof(psi_rvec));
-			psi_aabb(gpos, mesh->dim+1,grbox);
+			if(mode == PSI_MODE_DENSITY) {
 
-			// make ghosts and sample tets to the grid
-			psi_make_ghosts(gpos, grbox, &nghosts, (mesh->dim+1), grid->window, mesh);
-			for(g = 0; g < nghosts; ++g) 
-				psi_voxelize_tet(&gpos[(mesh->dim+1)*g], &tetbuf.vel[(mesh->dim+1)*t], tetbuf.mass[t], &grbox[2*g], grid);
+				// copy the position to the ghost array and compute its aabb
+				// make ghosts and sample tets to the grid
+				memcpy(gpos, &tetbuf.pos[(mesh->dim+1)*t], (mesh->dim+1)*sizeof(psi_rvec));
+				psi_aabb(gpos, mesh->dim+1,grbox);
+				psi_make_ghosts(gpos, grbox, &nghosts, (mesh->dim+1), grid->window, mesh);
+				for(g = 0; g < nghosts; ++g) 
+					psi_voxelize_tet(&gpos[(mesh->dim+1)*g], &tetbuf.vel[(mesh->dim+1)*t], tetbuf.mass[t], &grbox[2*g], grid);
+			
+			}
+
+			else if(mode == PSI_MODE_ANNIHILATION) {
+
+				// TODO: ghosts and periodicity
+				pos0 = &tetbuf.pos[(PSI_NDIM+1)*t];
+				vel0 = &tetbuf.vel[(PSI_NDIM+1)*t];
+				mass0 = tetbuf.mass[t];
+				psi_aabb(pos0, PSI_NDIM+1, rbox0); 
+
+				// TODO: make and save the clip planes here?
+
+				// TODO: self-annihilations
+
+				psi_rtree_query_init(&qry, rtree, rbox0);
+				while(psi_rtree_query_next(&qry, &e1)) {
+					tmass1 = mesh->mass[e1]; 
+					for(v = 0; v < vpere; ++v) {
+						tind = mesh->connectivity[e1*vpere+v];
+						tpos1[v] = mesh->pos[tind];
+						tvel1[v] = mesh->vel[tind];
+					}
+
+					// TODO: don't process pairs twice 
+					//if(e0 >= e1) continue;
+					psi_tet_buffer_refine(&tetbuf1, tpos1, tvel1, tmass1, mesh->elemtype);
+					for(t1 = 0; t1 < tetbuf1.num; ++t1) {
+						pos1 = &tetbuf1.pos[(PSI_NDIM+1)*t1];
+						vel1 = &tetbuf1.vel[(PSI_NDIM+1)*t1];
+						mass1 = tetbuf1.mass[t1];
+						psi_aabb(pos1, PSI_NDIM+1, rbox1); 
+
+						// voxelize the annihilation rate between pairs of tets
+
+						if(psi_aabb_ixn(rbox0, rbox1, mbox))
+							psi_voxelize_annihilation(pos0, vel0, mass0, pos1, vel1, mass1, mbox, grid);
+					}
+				}
+
+
+			}
+
 		}
 		if(e%512==0)
 			psi_printf("\rElement %d of %d, %.1f%%", e, mesh->nelem, (100.0*e)/mesh->nelem);
 	}
 	psi_tet_buffer_destroy(&tetbuf);
+	if(mode == PSI_MODE_ANNIHILATION)
+		psi_tet_buffer_destroy(&tetbuf1);
 
 	psi_printf("\n");
+
+
+	// deallocate the rtree if we created one internally
+	if(internal_rtree) 
+		psi_rtree_destroy(rtree);
+
 }
+
 
 #if 0
-void psi_annihilate(psi_rtree* rtree, psi_real reftol, psi_dest_grid* grid) {
-
-	psi_int e0, e1, t0, t1, i, vpere;
-	psi_rvec *pos0, *vel0, *pos1, *vel1;
-	psi_real mass0, mass1;
-	psi_rvec rbox0[2], rbox1[2];
-	if(rtree->order < 0 || rtree->order > 2) return;
-	vpere = PSI_VERTS_PER_ELEM[rtree->order];
-
-	// constant-size buffer for max refinement level
-	// TODO: user-issued max level
-	psi_tet_buffer tetbuf0, tetbuf1;
-	psi_int max_lvl = 4;
-	if(rtree->order == 0) max_lvl = 0;
-	psi_tet_buffer_init(&tetbuf0, reftol, max_lvl);
-	psi_tet_buffer_init(&tetbuf1, reftol, max_lvl);
-
-#if 1
-
-	// for querying the rtree
-	psi_rtree_query qry;
-
-	///// TODO //////
-	// Be extra careful about self-annihilations !!!!!
-	// (if pos0 and pos1 are the same element !!!!!)
-	// It should be handled automatically, but double-check
-	/////////////////
-	
-	// loop over all elements in the tree
-	for(e0 = 0; e0 < rtree->ndata; ++e0) {
-
-		// refine elements into the tet buffer 
-		// loop over each tet in the buffer
-		psi_tet_buffer_refine(&tetbuf0, &rtree->pos[e0*vpere], &rtree->vel[e0*vpere], rtree->mass[e0], rtree->order);
-		for(t0 = 0; t0 < tetbuf0.num; ++t0) {
-			pos0 = &tetbuf0.pos[(PSI_NDIM+1)*t0];
-			vel0 = &tetbuf0.vel[(PSI_NDIM+1)*t0];
-			mass0 = tetbuf0.mass[t0];
-			psi_aabb(pos0, PSI_NDIM+1, rbox0); 
-
-			// TODO: make and save the clip planes here?
-
-			// TODO: self-annihilations
-
-			psi_rtree_query_init(&qry, rtree, rbox0);
-			while(psi_rtree_query_next(&qry, &pos1, &vel1, &mass1, &e1)) {
-				// TODO: don't process pairs twice 
-				//if(e0 >= e1) continue;
-				psi_tet_buffer_refine(&tetbuf1, pos1, vel1, mass1, rtree->order);
-				for(t1 = 0; t1 < tetbuf1.num; ++t1) {
-					pos1 = &tetbuf1.pos[(PSI_NDIM+1)*t1];
-					vel1 = &tetbuf1.vel[(PSI_NDIM+1)*t1];
-					mass1 = tetbuf1.mass[t1];
-					psi_aabb(pos1, PSI_NDIM+1, rbox1); 
-
-					// voxelize the annihilation rate between pairs of tets
-					psi_voxelize_annihilation(pos0, vel0, mass0, rbox0, pos1, vel1, mass1, rbox1, grid);
-				}
-			}
-		}
-		if(e0%256 == 0) printf("%.1f\%\n", (100.0*e0)/rtree->ndata);
-	}
-	printf("\n");
-
-#else
-
-	// Experimental code for wrapping one decomposed element in an R*-tree
-	// TODO: this segfaults for some reason??
-
-	// for querying the rtree
-	psi_rtree_query qry, subqry;
-
-	// initialize a subtree for wrapping the tet buffer
-	psi_rtree subtree;
-	psi_rtree_init(&subtree, 0, 1024, 0);
-
-	
-	// loop over all elements in the tree
-	for(e0 = 0; e0 < rtree->ndata; ++e0) {
-		pos0 = &rtree->pos[e0*vpere];
-		vel0 = &rtree->vel[e0*vpere];
-		mass0 = rtree->mass[e0*vpere];
-
-		// bounding box for this element, check against the grid
-		// refine elements into the tet buffer 
-		// wrap it in an r*-tree for fast access
-		if(!psi_aabb_periodic(pos0, rtree->order, rbox0, grid)) continue; 
-		psi_tet_buffer_refine(&tetbuf0, pos0, vel0, mass0, rtree->order);
-		psi_rtree_load(tetbuf0.pos, tetbuf0.vel, tetbuf0.mass, tetbuf0.num, 0, &subtree, grid);
-
-		// query all elements that overlap this one
-		psi_rtree_query_init(&qry, rtree, rbox0);
-		while(psi_rtree_query_next(&qry, &pos1, &vel1, &mass1, &e1)) {
-			psi_tet_buffer_refine(&tetbuf1, pos1, vel1, mass1, rtree->order);
-			for(t1 = 0; t1 < tetbuf1.num; ++t1) {
-				pos1 = &tetbuf1.pos[(PSI_NDIM+1)*t1];
-				vel1 = &tetbuf1.vel[(PSI_NDIM+1)*t1];
-				mass1 = tetbuf1.mass[t1];
-				psi_aabb(pos1, PSI_NDIM+1, rbox1); // simple bounding box for tets 
-				psi_rtree_query_init(&subqry, &subtree, rbox1);
-				while(psi_rtree_query_next(&subqry, &pos0, &vel0, &mass0, &t0)) {
-
-					psi_voxelize_annihilation(pos0, vel0, mass0, rbox0, pos1, vel1, mass1, rbox1, grid);
-
-				}
-			}
-		}
-		if(e0%256 == 0) printf("%.1f\%\n", (100.0*e0)/rtree->ndata);
-	}
-	printf("\n");
-	psi_rtree_destroy(&subtree);
-
-#endif
-
-	psi_tet_buffer_destroy(&tetbuf0);
-	psi_tet_buffer_destroy(&tetbuf1);
-}
 
 void psi_count_streams(psi_rtree* rtree, psi_rvec* samppos, psi_int* count, psi_real* rho, psi_int nsamp, psi_real reftol) {
 
@@ -490,7 +456,6 @@ int psi_aabb_ixn(psi_rvec* rbox0, psi_rvec* rbox1, psi_rvec* ixn) {
 }
 
 
-
 psi_int psi_aabb_periodic(psi_rvec* pos, psi_rvec* rbox, psi_rvec* window, psi_mesh* mesh) {
 
 	// pos and rbox can both be modified!
@@ -519,7 +484,6 @@ psi_int psi_aabb_periodic(psi_rvec* pos, psi_rvec* rbox, psi_rvec* window, psi_m
 		}
 	}
 	else for(i = 0; i < mesh->dim; ++i) {
-		// TODO: is this bad for triquadratic elements, which can be convex?
 		if(rbox[0].xyz[i] > window[1].xyz[i]) return 0; 
 		if(rbox[1].xyz[i] < window[0].xyz[i]) return 0;
 	}

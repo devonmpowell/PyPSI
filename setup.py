@@ -12,15 +12,16 @@ libdirs = []
 macros = [('PYMODULE', None), ('NPY_NO_DEPRECATED_API', 'NPY_1_7_API_VERSION'),]
 
 
-# get user input for FFTW libs
-fftw_home = "/usr/local/fftw3"
-#fftw_home = "/usr/local"
+# determine the FFTW directories 
+#fftw_home = "/usr/local/fftw3"
+fftw_home = "/usr/local"
 #fftw_home = "/scratch/users/dmpowel1/fftw-3.3.4"
 print "FFTW3 home directory (Enter for default %s):"%fftw_home,
 user_input = raw_input()
 if not user_input.strip():
     user_input = fftw_home
 if os.path.isfile(user_input+"/lib/libfftw3.a"):
+    # if the fftw directory is good, add the path 
     fftw_home = user_input
     libs.append("fftw3")
     libdirs.append(fftw_home+"/lib")
@@ -30,7 +31,7 @@ else:
     print "Invalid FFTW path %s (libfftw3.a not found)"%fftw_home
     user_input = ""
     while user_input not in ["Y", "n"]:
-        print " Continue without building FFT functionality? [Y/n]:",
+        print " Continue without building FFTW functionality? [Y/n]:",
         user_input = raw_input()
     if user_input == "n":
         print "Abort."
