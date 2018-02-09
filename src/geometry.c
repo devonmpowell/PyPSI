@@ -215,7 +215,7 @@ void psi_voxelize_annihilation(psi_rvec* pos0, psi_rvec* vel0, psi_real mass0,
 	// voxelize
 	psi_voxels_init(&vox, &curpoly, mbox, grid);
 	while(psi_voxels_next(&vox, moments, &gridind)) {
-		grid->fields[PSI_GRID_M][gridind] += 0.5*rho0*rho1*vol0*moments[0];
+		grid->fields[PSI_GRID_M][gridind] += rho0*rho1*vol0*moments[0];
 	}
 }
 

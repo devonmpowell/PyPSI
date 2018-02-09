@@ -211,6 +211,10 @@ static int Mesh_init(Mesh *self, PyObject *args, PyObject *kwds) {
 			self->boxmax = Py_None;
 		}
 
+		//if()
+		self->connectivity = connar;
+		Py_INCREF(connar);
+
 
 		self->pos = posar;
 		Py_INCREF(posar);
@@ -218,8 +222,6 @@ static int Mesh_init(Mesh *self, PyObject *args, PyObject *kwds) {
 		Py_INCREF(velar);
 		self->mass = massar;
 		Py_INCREF(massar);
-		self->connectivity = connar;
-		Py_INCREF(connar);
 
 	}
 	else if(strcmp(cloader, "block") == 0) {

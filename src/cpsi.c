@@ -28,7 +28,7 @@ void psi_make_ghosts(psi_rvec* elems, psi_rvec* rboxes, psi_int* num, psi_int st
 // psi implementation 
 void psi_voxels(psi_grid* grid, psi_mesh* mesh, psi_rtree* rtree, psi_int mode, psi_real reftol, psi_int max_ref_lvl) {
 
-
+	setbuf(stdout, NULL);
 	psi_int e, g, t, v, nghosts, tind, internal_rtree, e1, t1;
 
 	// a local copy of the position in case it is modified due to periodicity
@@ -52,32 +52,22 @@ void psi_voxels(psi_grid* grid, psi_mesh* mesh, psi_rtree* rtree, psi_int mode, 
 	if(mode == PSI_MODE_ANNIHILATION)
 		psi_tet_buffer_init(&tetbuf1, reftol, max_ref_lvl);
 
-	setbuf(stdout, NULL);
-
-	printf("Called psi_voxels, mode = %d, reftol = %f, max_lvl = %d\n", mode, reftol, max_ref_lvl);
-
 	// check to see if we must build an rtree for this function
+	// if so, create on and insert all elements 
+	// if they are in the projection window
 	internal_rtree = (mode == PSI_MODE_ANNIHILATION && rtree == NULL);
 	if(internal_rtree) {
-		printf("No R*-tree given. Building one now...\n");
-
-		// create and load the rtree
+		psi_printf("No R*-tree given. Building one now...\n");
 		rtree = &myrtree; 
 		psi_rtree_init(rtree, 2*mesh->nelem);
 		for(e = 0; e < mesh->nelem; ++e) {
-
-			// make it periodic, get its bounding box, and check it against the grid
-			//mtot += mesh->mass[e]; 
 			for(v = 0; v < vpere; ++v) {
 				tind = mesh->connectivity[e*vpere+v];
 				tpos[v] = mesh->pos[tind];
 			}
-	
-			// insert each element into the tree if it is in the projection window
 			if(!psi_aabb_periodic(tpos, trbox, grid->window, mesh)) continue;
 			psi_rtree_insert(rtree, trbox, e);
 		}
-		printf("Done.\n");
 	}
 
 	// loop over all elements
@@ -98,6 +88,7 @@ void psi_voxels(psi_grid* grid, psi_mesh* mesh, psi_rtree* rtree, psi_int mode, 
 		psi_tet_buffer_refine(&tetbuf, tpos, tvel, tmass, mesh->elemtype);
 		for(t = 0; t < tetbuf.num; ++t) {
 
+			// linear in the density
 			if(mode == PSI_MODE_DENSITY) {
 
 				// copy the position to the ghost array and compute its aabb
@@ -110,8 +101,11 @@ void psi_voxels(psi_grid* grid, psi_mesh* mesh, psi_rtree* rtree, psi_int mode, 
 			
 			}
 
+			// quadratic in the density
 			else if(mode == PSI_MODE_ANNIHILATION) {
 
+				// get the bounding box of the first tet
+				// to use for the rtree query to find overlapping tets
 				// TODO: ghosts and periodicity
 				pos0 = &tetbuf.pos[(PSI_NDIM+1)*t];
 				vel0 = &tetbuf.vel[(PSI_NDIM+1)*t];
@@ -119,9 +113,10 @@ void psi_voxels(psi_grid* grid, psi_mesh* mesh, psi_rtree* rtree, psi_int mode, 
 				psi_aabb(pos0, PSI_NDIM+1, rbox0); 
 
 				// TODO: make and save the clip planes here?
+				// TODO: work on double-counting??
 
-				// TODO: self-annihilations
-
+				// query the rtree for overlapping elements,
+				// refine them, and intersect all pairs of resulting tets
 				psi_rtree_query_init(&qry, rtree, rbox0);
 				while(psi_rtree_query_next(&qry, &e1)) {
 					tmass1 = mesh->mass[e1]; 
@@ -130,9 +125,6 @@ void psi_voxels(psi_grid* grid, psi_mesh* mesh, psi_rtree* rtree, psi_int mode, 
 						tpos1[v] = mesh->pos[tind];
 						tvel1[v] = mesh->vel[tind];
 					}
-
-					// TODO: don't process pairs twice 
-					//if(e0 >= e1) continue;
 					psi_tet_buffer_refine(&tetbuf1, tpos1, tvel1, tmass1, mesh->elemtype);
 					for(t1 = 0; t1 < tetbuf1.num; ++t1) {
 						pos1 = &tetbuf1.pos[(PSI_NDIM+1)*t1];
@@ -141,27 +133,23 @@ void psi_voxels(psi_grid* grid, psi_mesh* mesh, psi_rtree* rtree, psi_int mode, 
 						psi_aabb(pos1, PSI_NDIM+1, rbox1); 
 
 						// voxelize the annihilation rate between pairs of tets
-
+						// only of mbox (the mutual intersection of bounding boxes) exists
 						if(psi_aabb_ixn(rbox0, rbox1, mbox))
 							psi_voxelize_annihilation(pos0, vel0, mass0, pos1, vel1, mass1, mbox, grid);
 					}
 				}
-
-
 			}
 
 		}
 		if(e%512==0)
 			psi_printf("\rElement %d of %d, %.1f%%", e, mesh->nelem, (100.0*e)/mesh->nelem);
 	}
+	psi_printf("\n");
+
+	// free temporary buffers
 	psi_tet_buffer_destroy(&tetbuf);
 	if(mode == PSI_MODE_ANNIHILATION)
 		psi_tet_buffer_destroy(&tetbuf1);
-
-	psi_printf("\n");
-
-
-	// deallocate the rtree if we created one internally
 	if(internal_rtree) 
 		psi_rtree_destroy(rtree);
 
@@ -188,7 +176,7 @@ void psi_count_streams(psi_rtree* rtree, psi_rvec* samppos, psi_int* count, psi_
 	psi_rtree_query qry;
 	psi_rvec qbox[2];
 	for(s = 0; s < nsamp; ++s) {
-		printf("Sample %d of %d (%.1f\%)\r", s, nsamp, 100.0*s/nsamp);
+		psi_printf("Sample %d of %d (%.1f\%)\r", s, nsamp, 100.0*s/nsamp);
 		
 		// query the r*-tree using a degenerate query box
 		qbox[0] = samppos[s];
@@ -225,7 +213,7 @@ void psi_count_streams(psi_rtree* rtree, psi_rvec* samppos, psi_int* count, psi_
 #endif
 		}
 	}
-	printf("\n");
+	psi_printf("\n");
 	psi_tet_buffer_destroy(&tetbuf);
 }
 
