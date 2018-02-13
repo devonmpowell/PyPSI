@@ -55,6 +55,11 @@ psi_int psi_rtree_query_next(psi_rtree_query* qry, psi_int* ind) {
 			qry->stack[qry->nstack].index = node->children[c].data;
 			qry->stack[qry->nstack].level = level-1;
 			qry->nstack++;
+
+			if(qry->nstack >= STACK_MAX) {
+				psi_printf("Warning! R*-tree query stack overflow!\n");
+			}
+
 			next_child: continue;
 		}
 	}
@@ -207,6 +212,10 @@ void psi_rtree_destroy(psi_rtree* rtree) {
 void psi_rtree_init(psi_rtree* rtree, psi_int capacity) {
 	rtree->nodecap = capacity; 
 	rtree->allnodes = psi_malloc(capacity*sizeof(psi_rtree_node));
+	if(!rtree->allnodes) {
+		psi_printf("Error! Rtree allocation failed!\n");
+		return;
+	}
 	rtree->root = 0; 
 	rtree->allnodes[rtree->root].nchildren = 0;
 	rtree->nnodes = 1;

@@ -8,6 +8,7 @@
 #define NODE_MAX 32
 #define NODE_MIN ((4*NODE_MAX)/10)
 #define KEEP_ON_REINSERT ((7*NODE_MAX)/10)
+#define STACK_MAX 512 // TODO: how big should the stack be??
 
 // a single data element (aabb and index) 
 typedef struct {
@@ -36,7 +37,7 @@ typedef struct {
 	struct {
 		psi_int index;
 		psi_int level;
-	} stack[256]; // TODO: how big should the stack be??
+	} stack[STACK_MAX];
 	psi_int nstack;
 	psi_rvec* rbox;
 	psi_rtree* rtree;
