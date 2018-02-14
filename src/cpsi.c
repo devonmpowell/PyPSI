@@ -28,7 +28,7 @@ void psi_make_ghosts(psi_rvec* elems, psi_rvec* rboxes, psi_int* num, psi_int st
 // psi implementation 
 void psi_voxels(psi_grid* grid, psi_mesh* mesh, psi_rtree* rtree, psi_int mode, psi_real reftol, psi_int max_ref_lvl) {
 
-	setbuf(stdout, NULL);
+	//setbuf(stdout, NULL);
 	psi_int e, g, t, v, nghosts, tind, internal_rtree, e1, t1;
 
 	// a local copy of the position in case it is modified due to periodicity
@@ -67,7 +67,10 @@ void psi_voxels(psi_grid* grid, psi_mesh* mesh, psi_rtree* rtree, psi_int mode, 
 			}
 			if(!psi_aabb_periodic(tpos, trbox, grid->window, mesh)) continue;
 			psi_rtree_insert(rtree, trbox, e);
+		    if(e%65536==0)
+			    psi_printf("\rElement %d of %d, %.1f%%", e, mesh->nelem, (100.0*e)/mesh->nelem);
 		}
+	    psi_printf("\ndone.\n");
 	}
 
 	// loop over all elements
@@ -141,7 +144,7 @@ void psi_voxels(psi_grid* grid, psi_mesh* mesh, psi_rtree* rtree, psi_int mode, 
 			}
 
 		}
-		if(e%512==0)
+		if(e%65536==0)
 			psi_printf("\rElement %d of %d, %.1f%%", e, mesh->nelem, (100.0*e)/mesh->nelem);
 	}
 	psi_printf("\n");
