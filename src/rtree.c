@@ -58,6 +58,7 @@ psi_int psi_rtree_query_next(psi_rtree_query* qry, psi_int* ind) {
 
 			if(qry->nstack >= STACK_MAX) {
 				psi_printf("Warning! R*-tree query stack overflow!\n");
+                exit(0);
 			}
 
 			next_child: continue;
@@ -97,6 +98,7 @@ void psi_rtree_insert_fancy(psi_rtree_data newnode, psi_int level, psi_int split
 		if(node) rtree->allnodes = node;
 		else {
 			psi_printf("Tree reallocation failed.\n");
+            exit(0);
 			return;
 		}
 	}
@@ -214,6 +216,7 @@ void psi_rtree_init(psi_rtree* rtree, psi_int capacity) {
 	rtree->allnodes = psi_malloc(capacity*sizeof(psi_rtree_node));
 	if(!rtree->allnodes) {
 		psi_printf("Error! Rtree allocation failed!\n");
+            exit(0);
 		return;
 	}
 	rtree->root = 0; 

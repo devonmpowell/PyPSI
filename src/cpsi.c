@@ -18,6 +18,7 @@
 #include "geometry.h"
 //#include "particles.h"
 
+#define PRINT_EVERY 1024
 
 // internal top-level utilities
 void psi_aabb(psi_rvec* pos, psi_int nverts, psi_rvec* rbox);
@@ -29,7 +30,7 @@ void psi_make_ghosts(psi_rvec* elems, psi_rvec* rboxes, psi_int* num, psi_int st
 void psi_voxels(psi_grid* grid, psi_mesh* mesh, psi_rtree* rtree, psi_int mode, psi_real reftol, psi_int max_ref_lvl) {
 
 	//setbuf(stdout, NULL);
-	psi_int e, g, t, v, nghosts, tind, internal_rtree, e1, t1;
+	psi_int e, g, t, v, nghosts, tind, internal_rtree, e1, t1, elemct;
 
 	// a local copy of the position in case it is modified due to periodicity
 	psi_int vpere = mesh->elemtype;
@@ -59,18 +60,19 @@ void psi_voxels(psi_grid* grid, psi_mesh* mesh, psi_rtree* rtree, psi_int mode, 
 	if(internal_rtree) {
 		psi_printf("No R*-tree given. Building one now...\n");
 		rtree = &myrtree; 
-		psi_rtree_init(rtree, 2*mesh->nelem);
-		for(e = 0; e < mesh->nelem; ++e) {
+		psi_rtree_init(rtree, (psi_int)(0.05*mesh->nelem)); // TODO: heuristic!!!
+		for(e = 0, elemct = 0; e < mesh->nelem; ++e) {
 			for(v = 0; v < vpere; ++v) {
 				tind = mesh->connectivity[e*vpere+v];
 				tpos[v] = mesh->pos[tind];
 			}
 			if(!psi_aabb_periodic(tpos, trbox, grid->window, mesh)) continue;
 			psi_rtree_insert(rtree, trbox, e);
-		    if(e%65536==0)
+            elemct++;
+		    if(e%PRINT_EVERY==0)
 			    psi_printf("\rElement %d of %d, %.1f%%", e, mesh->nelem, (100.0*e)/mesh->nelem);
 		}
-	    psi_printf("\ndone.\n");
+	    psi_printf("\ndone. Inserted %d elements.\n", elemct);
 	}
 
 	// loop over all elements
@@ -144,7 +146,7 @@ void psi_voxels(psi_grid* grid, psi_mesh* mesh, psi_rtree* rtree, psi_int mode, 
 			}
 
 		}
-		if(e%65536==0)
+		if(e%PRINT_EVERY==0)
 			psi_printf("\rElement %d of %d, %.1f%%", e, mesh->nelem, (100.0*e)/mesh->nelem);
 	}
 	psi_printf("\n");
