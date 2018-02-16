@@ -47,7 +47,7 @@ class MassMapTests(TestCase):
         snap = 'data/snapshot_010'
         mesh = psi.Mesh(filename=snap, loader='gadget2')
         grid = psi.Grid(type='cart', n=ngrid, window=(mesh.boxmin, mesh.boxmax)) 
-        psi.voxels(grid=grid, mesh=mesh)
+        psi.voxels(grid=grid, mesh=mesh, mode='density')
 
         # check the total mass
         # show a picture

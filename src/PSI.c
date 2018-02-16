@@ -331,7 +331,7 @@ static int Mesh_init(Mesh *self, PyObject *args, PyObject *kwds) {
 
 	}
 	else {
-		psi_printf("Bad loader: %s\n", cloader);
+		PyErr_SetString(PyExc_ValueError, "Invalid mesh loader.");
 		return -1;
 	} 
 
@@ -585,6 +585,7 @@ static int Grid_init(Grid *self, PyObject *args, PyObject *kwds) {
 		Py_XDECREF(pytype);
 	}
 	else {
+		PyErr_SetString(PyExc_ValueError, "Invalid grid type.");
 		return -1;
 	}
 
@@ -788,7 +789,7 @@ static PyObject *PSI_voxels(PyObject *self, PyObject *args, PyObject* kwds) {
 	maxlvl = 0;
 
 	if(!PyArg_ParseTupleAndKeywords(args, kwds, "OO|sdi", kwlist, &grid, &mesh, &modestr, &reftol, &maxlvl))
-		Py_RETURN_NONE;
+		return NULL;
 
 	// extract C pointers and such
 	PSI_Grid2grid(grid, &cgrid);
@@ -804,8 +805,8 @@ static PyObject *PSI_voxels(PyObject *self, PyObject *args, PyObject* kwds) {
 	else if(strcmp(modestr, "annihilation") == 0)
 		mode = PSI_MODE_ANNIHILATION;
 	else {
-		PyErr_SetString(PyExc_ValueError, "Invalid mode for PSI_voxels");
-		Py_RETURN_NONE;
+		PyErr_SetString(PyExc_ValueError, "Invalid mode for PSI.voxels()");
+		return NULL;
 	}
 
 	// call the C function
@@ -841,10 +842,9 @@ static PyObject *PSI_phi(PyObject *self, PyObject *args, PyObject* kwds) {
 	psi_do_phi(&cgrid, PyArray_DATA(retar), Gn);
 	return retar;
 #else
-	char buf[128];
-	sprintf(buf, "PSI was compiled without FFTW. Function %s does nothing.", __FUNCTION__);
-	PyErr_SetString(PyExc_RuntimeWarning, buf);
-	Py_RETURN_NONE;
+	PyErr_SetString(PyExc_RuntimeWarning, 
+			"PSI was compiled without FFTW. PSI.phi() does nothing.");
+	return NULL;
 #endif
 
 }

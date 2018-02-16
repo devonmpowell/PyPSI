@@ -30,7 +30,7 @@ void psi_make_ghosts(psi_rvec* elems, psi_rvec* rboxes, psi_int* num, psi_int st
 void psi_voxels(psi_grid* grid, psi_mesh* mesh, psi_rtree* rtree, psi_int mode, psi_real reftol, psi_int max_ref_lvl) {
 
 	//setbuf(stdout, NULL);
-	psi_int e, g, t, v, nghosts, tind, internal_rtree, e1, t1, elemct;
+	psi_int e, g, t, v, nghosts, tind, internal_rtree, e1, t1, elemct, rtsz;
 
 	// a local copy of the position in case it is modified due to periodicity
 	psi_int vpere = mesh->elemtype;
@@ -60,7 +60,9 @@ void psi_voxels(psi_grid* grid, psi_mesh* mesh, psi_rtree* rtree, psi_int mode, 
 	if(internal_rtree) {
 		psi_printf("No R*-tree given. Building one now...\n");
 		rtree = &myrtree; 
-		psi_rtree_init(rtree, (psi_int)(0.05*mesh->nelem)); // TODO: heuristic!!!
+		rtsz = (psi_int)(0.05*mesh->nelem);
+		if(rtsz < MIN_RTREE_CAP) rtsz = MIN_RTREE_CAP;
+		psi_rtree_init(rtree, rtsz); // TODO: heuristic!!!
 		for(e = 0, elemct = 0; e < mesh->nelem; ++e) {
 			for(v = 0; v < vpere; ++v) {
 				tind = mesh->connectivity[e*vpere+v];
@@ -71,6 +73,9 @@ void psi_voxels(psi_grid* grid, psi_mesh* mesh, psi_rtree* rtree, psi_int mode, 
             elemct++;
 		    if(e%PRINT_EVERY==0)
 			    psi_printf("\rElement %d of %d, %.1f%%", e, mesh->nelem, (100.0*e)/mesh->nelem);
+#ifdef PYMODULE
+			PyErr_CheckSignals();
+#endif
 		}
 	    psi_printf("\ndone. Inserted %d elements.\n", elemct);
 	}
@@ -86,51 +91,58 @@ void psi_voxels(psi_grid* grid, psi_mesh* mesh, psi_rtree* rtree, psi_int mode, 
 			tpos[v] = mesh->pos[tind];
 			tvel[v] = mesh->vel[tind];
 		}
-		if(!psi_aabb_periodic(tpos, trbox, grid->window, mesh)) continue;
+		if(!psi_aabb_periodic(tpos, trbox, grid->window, mesh)) 
+			continue;
 
 		// refine elements into the tet buffer 
-		// loop over each tet in the buffer
 		psi_tet_buffer_refine(&tetbuf, tpos, tvel, tmass, mesh->elemtype);
-		for(t = 0; t < tetbuf.num; ++t) {
 
-			// linear in the density
-			if(mode == PSI_MODE_DENSITY) {
+		// linear in the density
+		if(mode == PSI_MODE_DENSITY) {
 
-				// copy the position to the ghost array and compute its aabb
-				// make ghosts and sample tets to the grid
+			// loop over each tet in the buffer
+			// copy the position to the ghost array and compute its aabb
+			// make ghosts and sample tets to the grid
+			for(t = 0; t < tetbuf.num; ++t) {
 				memcpy(gpos, &tetbuf.pos[(mesh->dim+1)*t], (mesh->dim+1)*sizeof(psi_rvec));
 				psi_aabb(gpos, mesh->dim+1,grbox);
 				psi_make_ghosts(gpos, grbox, &nghosts, (mesh->dim+1), grid->window, mesh);
 				for(g = 0; g < nghosts; ++g) 
 					psi_voxelize_tet(&gpos[(mesh->dim+1)*g], &tetbuf.vel[(mesh->dim+1)*t], tetbuf.mass[t], &grbox[2*g], grid);
-			
 			}
+		}
 
-			// quadratic in the density
-			else if(mode == PSI_MODE_ANNIHILATION) {
+		// quadratic in the density
+		else if(mode == PSI_MODE_ANNIHILATION) {
 
-				// get the bounding box of the first tet
-				// to use for the rtree query to find overlapping tets
-				// TODO: ghosts and periodicity
-				pos0 = &tetbuf.pos[(PSI_NDIM+1)*t];
-				vel0 = &tetbuf.vel[(PSI_NDIM+1)*t];
-				mass0 = tetbuf.mass[t];
-				psi_aabb(pos0, PSI_NDIM+1, rbox0); 
+			// TODO: make and save the clip planes, density, rboxes for tetbuf 1 here
 
-				// TODO: make and save the clip planes here?
-				// TODO: work on double-counting??
+			// query the rtree for overlapping elements,
+			// refine them, and intersect all pairs of resulting tets
+			// TODO: ghosts and periodicity
+			psi_rtree_query_init(&qry, rtree, trbox);
+			while(psi_rtree_query_next(&qry, &e1)) {
 
-				// query the rtree for overlapping elements,
-				// refine them, and intersect all pairs of resulting tets
-				psi_rtree_query_init(&qry, rtree, rbox0);
-				while(psi_rtree_query_next(&qry, &e1)) {
-					tmass1 = mesh->mass[e1]; 
-					for(v = 0; v < vpere; ++v) {
-						tind = mesh->connectivity[e1*vpere+v];
-						tpos1[v] = mesh->pos[tind];
-						tvel1[v] = mesh->vel[tind];
-					}
-					psi_tet_buffer_refine(&tetbuf1, tpos1, tvel1, tmass1, mesh->elemtype);
+				// get the overlapping element and refine it
+				tmass1 = mesh->mass[e1]; 
+				for(v = 0; v < vpere; ++v) {
+					tind = mesh->connectivity[e1*vpere+v];
+					tpos1[v] = mesh->pos[tind];
+					tvel1[v] = mesh->vel[tind];
+				}
+				psi_tet_buffer_refine(&tetbuf1, tpos1, tvel1, tmass1, mesh->elemtype);
+
+				// loop over each pair of tets between the refine buffers 
+				for(t = 0; t < tetbuf.num; ++t) {
+
+					// get the bounding box of the first tet
+					// to use for the rtree query to find overlapping tets
+					pos0 = &tetbuf.pos[(PSI_NDIM+1)*t];
+					vel0 = &tetbuf.vel[(PSI_NDIM+1)*t];
+					mass0 = tetbuf.mass[t];
+					psi_aabb(pos0, PSI_NDIM+1, rbox0); 
+
+					// loop over the second buffer
 					for(t1 = 0; t1 < tetbuf1.num; ++t1) {
 						pos1 = &tetbuf1.pos[(PSI_NDIM+1)*t1];
 						vel1 = &tetbuf1.vel[(PSI_NDIM+1)*t1];
@@ -144,10 +156,13 @@ void psi_voxels(psi_grid* grid, psi_mesh* mesh, psi_rtree* rtree, psi_int mode, 
 					}
 				}
 			}
-
 		}
+
 		if(e%PRINT_EVERY==0)
 			psi_printf("\rElement %d of %d, %.1f%%", e, mesh->nelem, (100.0*e)/mesh->nelem);
+#ifdef PYMODULE
+		PyErr_CheckSignals(); // TODO: why does this do nothing??
+#endif
 	}
 	psi_printf("\n");
 

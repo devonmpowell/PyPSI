@@ -9,6 +9,7 @@
 #define NODE_MIN ((4*NODE_MAX)/10)
 #define KEEP_ON_REINSERT ((7*NODE_MAX)/10)
 #define STACK_MAX 1024 // TODO: how big should the stack be??
+#define MIN_RTREE_CAP 1024 
 
 // a single data element (aabb and index) 
 typedef struct {
