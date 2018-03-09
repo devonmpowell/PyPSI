@@ -819,6 +819,7 @@ static PyObject *PSI_voxels(PyObject *self, PyObject *args, PyObject* kwds) {
 static PyObject *PSI_phi(PyObject *self, PyObject *args, PyObject* kwds) {
 
 	psi_int ax;
+	npy_intp npdims[3];
 	psi_grid cgrid;
 	psi_real Gn;
 	Grid* grid;	
@@ -833,7 +834,6 @@ static PyObject *PSI_phi(PyObject *self, PyObject *args, PyObject* kwds) {
 	if(cgrid.type != PSI_GRID_CART) 
 		Py_RETURN_NONE;
 
-	npy_intp npdims[3];
 	for(ax = 0; ax < 3; ++ax)
 		npdims[ax] = cgrid.n.ijk[ax];
 
@@ -848,6 +848,52 @@ static PyObject *PSI_phi(PyObject *self, PyObject *args, PyObject* kwds) {
 #endif
 
 }
+
+static PyObject *PSI_powerSpectrum(PyObject *self, PyObject *args, PyObject* kwds) {
+
+	psi_int ax, nbins, nmin;
+	psi_real lmin, lside, dk;
+	npy_intp npdims[3];
+	psi_grid cgrid;
+	Grid* grid;	
+	static char *kwlist[] = {"grid", "nbins", NULL};
+
+#ifdef HAVE_FFTW
+	nbins = -1;
+	if(!PyArg_ParseTupleAndKeywords(args, kwds, "O|i", kwlist, &grid, &nbins))
+		return NULL;
+
+	PSI_Grid2grid(grid, &cgrid);
+	if(cgrid.type != PSI_GRID_CART) 
+		Py_RETURN_NONE;
+
+	// get the shortest physical box side for the Nyquist frequency
+	// if no nbins was specified, use that box side as well
+	lmin = 1.0e30;
+	for(ax = 0; ax < cgrid.dim; ++ax) {
+		lside = cgrid.window[1].xyz[ax]-cgrid.window[0].xyz[ax];
+		if(lside < lmin) {
+			lmin = lside;
+			nmin = cgrid.n.ijk[ax];
+		}
+	}
+	if(nbins < 0)
+		nbins = nmin; 
+
+	// the return array
+	npdims[0] = nbins;
+	PyObject* pspec = PyArray_ZEROS(1, npdims, NPY_DOUBLE, 0);
+	PyObject* kk = PyArray_ZEROS(1, npdims, NPY_DOUBLE, 0);
+	psi_do_power_spectrum(&cgrid, PyArray_DATA(pspec), PyArray_DATA(kk), TWO_PI/lmin, nbins);
+	return Py_BuildValue("OO", pspec, kk);
+#else
+	PyErr_SetString(PyExc_RuntimeWarning, 
+			"PSI was compiled without FFTW. PSI.powerSpectrum() does nothing.");
+	return NULL;
+#endif
+
+}
+
 
 
 /////////////////////////////////////////////////////////////
@@ -864,9 +910,10 @@ static PyObject *PSI_phi(PyObject *self, PyObject *args, PyObject* kwds) {
 
 static PyMethodDef module_methods[] = {
    	{"skymap", (PyCFunction)PSI_skymap, METH_KEYWORDS, "Makes a skymap"},
+   	{"beamtrace", (PyCFunction)PSI_beamtrace, METH_KEYWORDS, "beamtrace"},
    	{"voxels", (PyCFunction)PSI_voxels, METH_KEYWORDS, "Voxelizes"},
    	{"phi", (PyCFunction)PSI_phi, METH_KEYWORDS, "phi"},
-   	{"beamtrace", (PyCFunction)PSI_beamtrace, METH_KEYWORDS, "beamtrace"},
+   	{"powerSpectrum", (PyCFunction)PSI_powerSpectrum, METH_KEYWORDS, "powerSpectrum"},
     {NULL, NULL, 0, NULL}
 };
 

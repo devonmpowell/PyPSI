@@ -59,7 +59,7 @@ class MassMapTests(TestCase):
         plt.imshow(np.log10(grid.fields["m"][:,:,32]))
         plt.show()
         self.assertAlmostEqual(err, 0.0, delta=errtol)
-       
+
 
 # tests FFT stuff.. potential, power spectrum, etc 
 class FFTTests(TestCase):
@@ -81,10 +81,36 @@ class FFTTests(TestCase):
         phi = psi.phi(grid, Gn=G)
         analytic = np.sin(2*np.pi*nk*np.arange(box)/box)
         maxerr = np.max(np.abs(phi-analytic))
-        print ' - max err in phi =', maxerr
+        print ' - max absolute err in phi =', maxerr
 
         # test that the max error is small
         self.assertAlmostEqual(maxerr, 0.0, delta=errtol)
+
+    def test_powerspec(self):
+
+        # loads, voxelizes, and computes the potential field
+        print
+        dim = 3
+        box = 128 
+        win = 13.0 
+        grid = psi.Grid(type='cart', n=dim*(box,), window=(dim*(0.,), dim*(win,))) 
+
+        # set phi min, max such that phi min/max = -+1
+        #rho0 = -(np.pi*nk**2)/(G*win**2)
+        grid.fields['m'][:,:,:] = np.sin(2*np.pi*13*np.arange(box)/box)
+        grid.fields['m'][:,:,:] += 0.7*np.sin(2*np.pi*31*np.arange(box)/box)
+        grid.fields['m'][:,:,:] += 1.2*np.sin(2*np.pi*45*np.arange(box)/box)
+        P, k = psi.powerSpectrum(grid)
+        plt.plot(k, P)
+        plt.show()
+
+        # test that the max error is small
+        ptot_x = np.sum(grid.fields['m']**2)
+        ptot_k = np.sum(P)
+        maxerr = np.abs((ptot_x-ptot_k)/ptot_x)
+        print ' - max relative err (checking Parseval) =', maxerr
+        self.assertAlmostEqual(maxerr, 0.0, delta=errtol)
+
 
 
 # test basic Grid functionality 

@@ -73,55 +73,57 @@ inline psi_real laplace(psi_rvec k, psi_rvec d) {
 
 
 
-void psi_do_power_spectrum(psi_grid* grid, psi_real* phi_out, psi_real Gn) {
+void psi_do_power_spectrum(psi_grid* grid, psi_real* P, psi_real* kk, psi_real dk, psi_int nbins) {
 
-	fftw_plan p, pinv;
+	fftw_plan p;
 	fftw_complex* rhok;
-	psi_int ax, i, j, k;
+	psi_int ax, i, j, k, ll;
 	psi_dvec halfn, dims;
-	psi_rvec kvec, L, dx;
-	psi_real kvec2;
+	psi_rvec kvec, L;
+	psi_real ksc, zre, zim, kvol, kvolfac;
 
 	for(ax = 0; ax < 3; ++ax) {
 		dims.ijk[ax] = grid->n.ijk[ax];
 		halfn.ijk[ax] = dims.ijk[ax]/2 + 1;
 		L.xyz[ax] = grid->window[1].xyz[ax]-grid->window[0].xyz[ax];
-		dx.xyz[ax] = L.xyz[ax]/dims.ijk[ax];
 	}
 	
+	// do the FFT and bin the power
 	rhok = (fftw_complex*) fftw_malloc(dims.i*dims.j*halfn.k*sizeof(fftw_complex));
 	p = fftw_plan_dft_r2c_3d(dims.i, dims.j, dims.k, grid->fields[0], rhok, FFTW_ESTIMATE);
 	fftw_execute(p);
 	fftw_destroy_plan(p);
-
-	// Phi
 	for(i = 0; i < dims.i; ++i) 
 	for(j = 0; j < dims.j; ++j) 
 	for(k = 0; k < halfn.k; ++k) {
 
-		// zero the DC component
-		if(i == 0 && j == 0 && k == 0) {
-			rhok[0][0] = 0.0;
-			rhok[0][1] = 0.0;
-			continue;
-		}
-	
 		// compute wavenumbers (arbitrary units)	
 		kvec.x = TWO_PI/L.x * ((i < halfn.i)? i : (i - dims.i));
 		kvec.y = TWO_PI/L.y * ((j < halfn.j)? j : (j - dims.j));
 		kvec.z = TWO_PI/L.z * k;
-		kvec2 = kvec.x*kvec.x + kvec.y*kvec.y + kvec.z*kvec.z;
-
-		// Filter the FFT
-		rhok[dims.j*halfn.k*i + halfn.k*j + k][0] *= FOUR_PI*Gn/(dims.i*dims.j*dims.k)*laplace(kvec, dx)*smooth(kvec, SMOOTH);
-		rhok[dims.j*halfn.k*i + halfn.k*j + k][1] *= FOUR_PI*Gn/(dims.i*dims.j*dims.k)*laplace(kvec, dx)*smooth(kvec, SMOOTH);
-
+		ksc = sqrt(kvec.x*kvec.x + kvec.y*kvec.y + kvec.z*kvec.z);
+		
+		// get the index and bin the power
+		ll = floor(ksc/dk);
+		if(ll < nbins) {
+			zre = rhok[dims.j*halfn.k*i + halfn.k*j + k][0]; 
+			zim = rhok[dims.j*halfn.k*i + halfn.k*j + k][1]; 
+			P[ll] += zre*zre + zim*zim; 
+		}
 	}
-	pinv = fftw_plan_dft_c2r_3d(dims.i, dims.j, dims.k, rhok, phi_out, FFTW_ESTIMATE);
-	fftw_execute(pinv);
-	fftw_destroy_plan(pinv);
 	fftw_free(rhok);
 
+	// normalize
+	// the factor of 2 is for the real FFT,
+	// we have only counted the +- mode pairs once
+	//kvolfac = 
+	for(ll = 0; ll < nbins; ++ll) {
+		kk[ll] = dk*(ll+0.5);
+		P[ll] *= 2.0/(dims.i*dims.j*dims.k);
+		//kvol = (FOUR_PI*dk*dk*dk/3.0)*(1+3*ll+3*ll*ll);
+		//P[ll] *= 1.0/kvol; 
+	}
+	
 }
 
 
