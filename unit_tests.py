@@ -161,9 +161,7 @@ class PSIMODTests(TestCase):
 
     def test_beam_tracing(self):
 
-        #return
-
-
+        return
 
         #metric = psi.Metric(type='flrw', filepattern='/home/devon/HDD/PS-128-vm/geo/%04d')
         metric = psi.Metric(type='kerr')

@@ -1,65 +1,17 @@
 #ifdef HAVE_FFTW
 #include "fft.h"
 
-// Hybrid eigensolver routines from J. Kopp (2008)
-// http://arxiv.org/abs/physics/0610206
-//extern "C" {
-	////#include "dsyevh3.h"
-	////#include "dsyevc3.h"
-	//#include "dsyevj3.h"
-//}
+
+
 #define ind3(i,j,k) (dims.j*dims.k*((i+dims.i)%dims.i) + dims.k*((j+dims.j)%dims.j) + (k+dims.k)%dims.k)
-
-// forward declarations
-//void read_hdf5(string filename, string fieldname);
-//void read_fortran(string filename);
-//void read_gadget_header(string filename);
-//void do_phi();
-//void do_minmax();
-
-// metadata
-psi_real BoxSize; // In Mpc/h
-psi_real ScaleFac; // scale factor a
-psi_real HubbleParam; // H0 (present-day)
-psi_real Omega_m; // Omega_m (present-day)
-psi_real Omega_L; // Omega_Lambda (present-day)
-
 #define SMOOTH 0.0
-
-#if 0
-// global data arrays
-int dims.i, dims.j, dims.k;
-psi_real dx, dy, dz;
-vector<myreal> rho;
-
-// potential and Hessian eigenvalues 
-vector<myreal> phi;
-vector<myreal> e0;
-vector<myreal> e1;
-vector<myreal> e2;
-
-// local minima/maxima
-vector<int> minima_phi;
-vector<int> maxima_phi;
-vector<int> minima_det;
-vector<int> maxima_det;
-
-	
-	// Correct for hubble expansion.
-	// TODO: Is this right?
-	psi_real norm = 1.5 * HubbleParam * HubbleParam * Omega_m * (Omega_m/(ScaleFac*ScaleFac*ScaleFac) + Omega_L) /(ScaleFac*ScaleFac*ScaleFac);
-
-	for(int i = 0; i < dims.i*dims.j*dims.k; ++i) {
-		rho[i] *= norm/rhobar;
-	}
-#endif
 	
 // Gaussian smoothing kernel
 // sigma in units of box size
-inline psi_real smooth(psi_rvec k, psi_real sigma) {
+//inline psi_real smooth(psi_rvec k, psi_real sigma) {
 	//return exp(-0.5*(k.x*k.x + k.y*k.y + k.z*k.z)*sigma*sigma); 
-	return 1.0;
-}
+	//return 1.0;
+//}
 
 // Green's fn. for the 13-point Laplacian stencil, to preserve the trace
 // of the Hessian to machine precision
@@ -168,8 +120,8 @@ void psi_do_phi(psi_grid* grid, psi_real* phi_out, psi_real Gn) {
 		kvec2 = kvec.x*kvec.x + kvec.y*kvec.y + kvec.z*kvec.z;
 
 		// Filter the FFT
-		rhok[dims.j*halfn.k*i + halfn.k*j + k][0] *= FOUR_PI*Gn/(dims.i*dims.j*dims.k)*laplace(kvec, dx)*smooth(kvec, SMOOTH);
-		rhok[dims.j*halfn.k*i + halfn.k*j + k][1] *= FOUR_PI*Gn/(dims.i*dims.j*dims.k)*laplace(kvec, dx)*smooth(kvec, SMOOTH);
+		rhok[dims.j*halfn.k*i + halfn.k*j + k][0] *= FOUR_PI*Gn/(dims.i*dims.j*dims.k)*laplace(kvec, dx);
+		rhok[dims.j*halfn.k*i + halfn.k*j + k][1] *= FOUR_PI*Gn/(dims.i*dims.j*dims.k)*laplace(kvec, dx);
 
 	}
 	pinv = fftw_plan_dft_c2r_3d(dims.i, dims.j, dims.k, rhok, phi_out, FFTW_ESTIMATE);
@@ -177,7 +129,25 @@ void psi_do_phi(psi_grid* grid, psi_real* phi_out, psi_real Gn) {
 	fftw_destroy_plan(pinv);
 	fftw_free(rhok);
 
+	return;
+}
+
+
+
+// this is all old stuff involving 3x3 eigensolvers
+// may bring it back one day
 #if 0
+
+// Hybrid eigensolver routines from J. Kopp (2008)
+// http://arxiv.org/abs/physics/0610206
+//extern "C" {
+	////#include "dsyevh3.h"
+	////#include "dsyevc3.h"
+	//#include "dsyevj3.h"
+//}
+
+
+
 	printf("  Finite difference and eigenvalues...\n");
 	
 	psi_real phi_xx, phi_yy, phi_zz, phi_xy, phi_xz, phi_yz;
@@ -233,11 +203,6 @@ void psi_do_phi(psi_grid* grid, psi_real* phi_out, psi_real Gn) {
 		e2[dims.j*dims.k*i + dims.k*j + k] = w[2];
 	}
 
-#endif
-	return;
-}
-
-#if 0
 void do_minmax() {
 
 	for(int i = 0; i < dims.i; ++i)
@@ -306,107 +271,6 @@ void do_minmax() {
 	}
 
 
-	return;
-}
-
-// read in a multidimensional hdf5 file
-void read_hdf5(string filename, string fieldname) {
-	vector<int> dims;
-	HDFGetDatasetExtent(filename, fieldname, dims);
-	dims.i = dims[0]; dims.j = dims[1]; dims.k = dims[2];
-	HDFReadDataset(filename, fieldname, rho);
-	return;
-}
-
-// read in a Fortran binary file
-void read_fortran(string filename) {
-	ifstream ifs;
-	ifs.open(filename, ios::binary);
-	if(!ifs.good()) {
-		printf(" Failed to open file.\n");
-		exit(0);
-	}
-	int blksize0;
-	ifs.read((char*)&blksize0, sizeof(int));
-	dims.i = (int)(pow((psi_real)blksize0/sizeof(float), 1.0/3.0) + 1.0e-3);
-	dims.j = dims.i; dims.k = dims.i;
-
-	// allocate a temp array
-	float* tdata = (float*) malloc(blksize0);
-	ifs.read((char*)tdata, blksize0);
-	int blksize1;
-	ifs.read((char*)&blksize1, sizeof(int));
-	if(blksize0 != blksize1) {
-		printf(" Bad file formatting.\n");
-		exit(0);
-	}
-	ifs.close();
-
-	// copy floats into the psi_real array
-	rho.resize(dims.i*dims.j*dims.k);
-	for(int i = 0; i < dims.i*dims.j*dims.k; ++i) {
-		rho[i] = tdata[i];
-	}
-	free(tdata);
-
-	return;
-}
-
-typedef struct {
-	int npart[6];
-	psi_real mass[6];
-	psi_real time;
-	psi_real redshift;
-	int flag_sfr;
-	int flag_feedback;
-	unsigned int npartTotal[6];
-	int flag_cooling;
-	int num_files;
-	psi_real BoxSize;
-	psi_real Omega0;
-	psi_real OmegaLambda;
-	psi_real HubbleParam;
-	int flag_stellarage;
-	int flag_metals;
-	unsigned int npartTotalHighWord[6];
-	int flag_entropy_instead_u;
-	int flag_psi_realprecision;
-	char fill[56];
-} Gadget2Header;
-
-void read_gadget_header(string filename) {
-	
-	ifstream ifs;
-	ifs.open(filename, ios::binary);
-	if(!ifs.good()) {
-		printf(" Failed to open file.\n");
-		exit(0);
-	}
-	int blksize;
-	Gadget2Header header;
-	ifs.read((char*)&blksize, sizeof(int) );
-	printf("blksize = %d\n", blksize);
-	if(blksize != sizeof(Gadget2Header)) {
-		printf(" Invalid Gadget snapshot format.\n");
-		exit(0);
-	}
-	ifs.read((char*)&header, sizeof(Gadget2Header));
-	ifs.close();
-
-	// metadata
-	//redshift = header.redshift;
-	ScaleFac = header.time;
-	BoxSize = header.BoxSize/1000.0; // need in Mpc/h
-	HubbleParam = header.HubbleParam;
-	Omega_m = header.Omega0;
-	Omega_L = header.OmegaLambda;
-
-	printf("   BoxSize = %lf (Mpc/h)\n", BoxSize);
-	printf("   a = %lf\n", ScaleFac);
-	printf("   H0 = %lf (100 km/(Mpc*s))\n", HubbleParam);
-	printf("   O_m = %lf\n", Omega_m);
-	printf("   O_L = %lf\n", Omega_L);
-		
 	return;
 }
 

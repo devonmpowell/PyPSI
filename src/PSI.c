@@ -162,7 +162,7 @@ static void PSI_Metric2metric(Metric* metric, psi_metric* cmetric) {
 	}
 	else {
 		psi_printf("Invalid metric\n");
-		Py_RETURN_NONE;
+		return NULL;
 	}
 }
 
@@ -243,7 +243,7 @@ static int Mesh_init(Mesh *self, PyObject *args, PyObject *kwds) {
 
 		if(!PySequence_Check(n)) {
 			psi_printf("Must provide particle block dimensions!\n");
-			Py_RETURN_NONE;
+			return -1;
 		}
 		for(ax = 0; ax < 3; ++ax)
 			nside.ijk[ax] = PyInt_AsLong(PySequence_GetItem(n, ax));
@@ -262,7 +262,7 @@ static int Mesh_init(Mesh *self, PyObject *args, PyObject *kwds) {
 		npdims[0] = nside.i*nside.j*nside.k;
 		if(npdims[0] != dtmp[0]) {
 			psi_printf("Number of particles does not match block dimensions!\n");
-			Py_RETURN_NONE;
+			return -1;
 		}
 		npdims[1] = psi_verts_per_elem(PSI_MESH_LINEAR); 
 		self->connectivity = PyArray_SimpleNew(2, npdims, NPY_INT32);
@@ -435,10 +435,10 @@ static PyObject* Grid_getCellGeometry(Grid *self, PyObject *args, PyObject *kwds
 	// see if it is a sequence or None to indicate all cells
 	bstep = 1;
 	if(!PyArg_ParseTupleAndKeywords(args, kwds, "O|i", kwlist, &pyind, &bstep))
-		Py_RETURN_NONE;
+		return NULL;
 	allcells = (pyind == Py_None)? 1 : 0; 
 	if(!allcells && !PySequence_Check(pyind)) 
-		Py_RETURN_NONE;
+		return NULL;
 
 
 	// parse the grid to the simple C struct
@@ -478,7 +478,7 @@ static PyObject* Grid_getCellGeometry(Grid *self, PyObject *args, PyObject *kwds
 				seq = PySequence_Fast(pyind, "not a sequence");
 				slen = PySequence_Fast_GET_SIZE(seq);
 				if(slen <= 0 || !PyInt_Check(PySequence_Fast_GET_ITEM(seq, 0))) 
-					Py_RETURN_NONE;
+					return NULL;
 			}
 	
 			// create the output array in the correct shape (flat for hp)
@@ -504,7 +504,7 @@ static PyObject* Grid_getCellGeometry(Grid *self, PyObject *args, PyObject *kwds
 				// set the array elements 
 				if(!psi_grid_get_cell_geometry(&cgrid, grind, bstep, boundary, &center, &vol)) {
 					printf("bad geometry\n");
-					Py_RETURN_NONE;
+					return NULL;
 				} 
 				for(ax = 0; ax < 3; ++ax)
 					cvdata[3*i+ax] = center.xyz[ax];
@@ -519,10 +519,10 @@ static PyObject* Grid_getCellGeometry(Grid *self, PyObject *args, PyObject *kwds
 
 		default:
 			psi_printf("Bad grid type\n");
-			Py_RETURN_NONE;
+			return NULL;
 	}
 	
-	return Py_BuildValue("(NNN)", PyArray_Return((PyArrayObject*)cverts), 
+	return Py_BuildValue("NNN", PyArray_Return((PyArrayObject*)cverts), 
 			PyArray_Return((PyArrayObject*)bverts), PyArray_Return((PyArrayObject*)pyvol)); 
 }
 
@@ -696,15 +696,15 @@ static PyObject *PSI_skymap(PyObject *self, PyObject *args, PyObject* kwds) {
 	bstep = 1;
 	mode = PSI_SKYMAP_RHO_LINEAR;
 	if(!PyArg_ParseTupleAndKeywords(args, kwds, "OO|ii", kwlist, &grid, &mesh, &bstep, &mode))
-		Py_RETURN_NONE;
+		return NULL;
 
 	// make C structs, check them
 	PSI_Grid2grid(grid, &cgrid);
 	PSI_Mesh2mesh(mesh, &cmesh);
 	if(cgrid.type != PSI_GRID_HPRING || cgrid.dim != 3) 
-		Py_RETURN_NONE;
+		return NULL;
 	if(cmesh.dim != cgrid.dim)
-		Py_RETURN_NONE;
+		return NULL;
 
 	// run the skymap
 	printf("----Making hpring skymap, mode = %d-----\n", mode);
@@ -735,11 +735,11 @@ static PyObject *PSI_beamtrace(PyObject *self, PyObject *args, PyObject* kwds) {
 	bstep = 1;
 	mode = PSI_SKYMAP_RHO_LINEAR;
 	if(!PyArg_ParseTupleAndKeywords(args, kwds, "OO|(ddd)(ddd)", kwlist, &grid, &metric, &obspos.x, &obspos.y, &obspos.z, &obsvel.x, &obsvel.y, &obsvel.z))
-		Py_RETURN_NONE;
+		return NULL;
 
 	PSI_Grid2grid(grid, &cgrid);
 	if(cgrid.type != PSI_GRID_HPRING || cgrid.dim != 3) 
-		Py_RETURN_NONE;
+		return NULL;
 
 	printf("metric2metric\n");
 
@@ -795,9 +795,9 @@ static PyObject *PSI_voxels(PyObject *self, PyObject *args, PyObject* kwds) {
 	PSI_Grid2grid(grid, &cgrid);
 	PSI_Mesh2mesh(mesh, &cmesh);
 	if(cgrid.type != PSI_GRID_CART) 
-		Py_RETURN_NONE;
+		return NULL;
 	if(cmesh.dim != cgrid.dim)
-		Py_RETURN_NONE;
+		return NULL;
 
 	// parse the deposit mode
 	if(strcmp(modestr, "density") == 0)
@@ -828,11 +828,11 @@ static PyObject *PSI_phi(PyObject *self, PyObject *args, PyObject* kwds) {
 #ifdef HAVE_FFTW
 	Gn = 1.0;
 	if(!PyArg_ParseTupleAndKeywords(args, kwds, "O|d", kwlist, &grid, &Gn))
-		Py_RETURN_NONE;
+		return NULL;
 
 	PSI_Grid2grid(grid, &cgrid);
 	if(cgrid.type != PSI_GRID_CART) 
-		Py_RETURN_NONE;
+		return NULL;
 
 	for(ax = 0; ax < 3; ++ax)
 		npdims[ax] = cgrid.n.ijk[ax];
@@ -865,7 +865,7 @@ static PyObject *PSI_powerSpectrum(PyObject *self, PyObject *args, PyObject* kwd
 
 	PSI_Grid2grid(grid, &cgrid);
 	if(cgrid.type != PSI_GRID_CART) 
-		Py_RETURN_NONE;
+		return NULL;
 
 	// get the shortest physical box side for the Nyquist frequency
 	// if no nbins was specified, use that box side as well
@@ -877,8 +877,7 @@ static PyObject *PSI_powerSpectrum(PyObject *self, PyObject *args, PyObject* kwd
 			nmin = cgrid.n.ijk[ax];
 		}
 	}
-	if(nbins < 0)
-		nbins = nmin; 
+	if(nbins < 0) nbins = nmin; 
 
 	// the return array
 	npdims[0] = nbins;
