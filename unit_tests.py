@@ -48,6 +48,7 @@ class MassMapTests(TestCase):
         mesh = psi.Mesh(filename=snap, loader='gadget2')
         grid = psi.Grid(type='cart', n=ngrid, window=(mesh.boxmin, mesh.boxmax)) 
         psi.voxels(grid=grid, mesh=mesh, mode='density')
+        #psi.voxels(grid=grid, mesh=mesh, mode='annihilation')
 
         # check the total mass
         # show a picture
@@ -56,9 +57,31 @@ class MassMapTests(TestCase):
         err = np.abs(1.0-voxmass/elemmass)
         print ' - total mass =', voxmass 
         print " - mass error = ", err 
-        plt.imshow(np.log10(grid.fields["m"][:,:,32]))
-        plt.show()
+        #plt.imshow(np.log10(grid.fields["m"][:,:,32]))
+        #plt.show()
         self.assertAlmostEqual(err, 0.0, delta=errtol)
+
+
+class SamplingTests(TestCase):
+
+    def test_vdf(self):
+
+        #return
+
+        # load a mesh, make a grid, and voxelize
+        print
+        snap = 'data/snapshot_010'
+        mesh = psi.Mesh(filename=snap, loader='gadget2')
+
+        sample_pos = (10.,10.,13.)
+        #sample_pos = ((19.,23.,29.),(10.,12.,13.))
+        #sample_pos = [19.,23.,29.]
+
+        rho, vel = psi.VDF(mesh, sample_pos)
+
+        print 'Sampled %d streams' % len(rho)
+        print 'rho =', rho
+        print 'vel =', vel
 
 
 # tests FFT stuff.. potential, power spectrum, etc 
@@ -101,8 +124,8 @@ class FFTTests(TestCase):
         grid.fields['m'][:,:,:] += 0.7*np.sin(2*np.pi*31*np.arange(box)/box)
         grid.fields['m'][:,:,:] += 1.2*np.sin(2*np.pi*45*np.arange(box)/box)
         P, k = psi.powerSpectrum(grid)
-        plt.plot(k, P)
-        plt.show()
+        #plt.plot(k, P)
+        #plt.show()
 
         # test that the max error is small
         ptot_x = np.sum(grid.fields['m']**2)

@@ -45,7 +45,7 @@ typedef struct {
 } psi_rtree_query;
 
 
-void psi_rtree_load(psi_rtree* rtree, psi_mesh* mesh); 
+void psi_rtree_from_mesh(psi_rtree* rtree, psi_mesh* mesh, psi_rvec* window); 
 
 void psi_rtree_init(psi_rtree* rtree, psi_int capacity);
 

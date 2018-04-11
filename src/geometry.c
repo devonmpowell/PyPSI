@@ -187,10 +187,6 @@ psi_real psi_orient_tet(psi_rvec* pos, psi_rvec* vel) {
 }
 
 
-
-
-
-//void psi_voxelize_annihilation(psi_rvec* pos[2], psi_rvec* vel[2], psi_real mass[2], psi_dest_grid* dest_grid) {
 void psi_voxelize_annihilation(psi_rvec* pos0, psi_rvec* vel0, psi_real mass0, 
 		psi_rvec* pos1, psi_rvec* vel1, psi_real mass1, psi_rvec* mbox, psi_grid* grid) {
 
@@ -210,9 +206,9 @@ void psi_voxelize_annihilation(psi_rvec* pos0, psi_rvec* vel0, psi_real mass0,
 	// initialize and clip to get the polyhedron
 	psi_init_tet(&curpoly, pos0);
 	psi_tet_faces_from_verts(faces, pos1);
-	psi_clip(&curpoly, faces, 4);
 
-	// voxelize
+	// voxelize the intersection
+	psi_clip(&curpoly, faces, 4);
 	psi_voxels_init(&vox, &curpoly, mbox, grid);
 	while(psi_voxels_next(&vox, moments, &gridind)) {
 		grid->fields[PSI_GRID_M][gridind] += rho0*rho1*vol0*moments[0];
@@ -220,7 +216,6 @@ void psi_voxelize_annihilation(psi_rvec* pos0, psi_rvec* vel0, psi_real mass0,
 }
 
 #if 0
-
 
 void psi_point_sample_tet(psi_rvec* pos, psi_rvec* vel, psi_real mass, psi_rvec* rbox, psi_dest_grid* grid) {
 
@@ -852,7 +847,8 @@ psi_int psi_voxels_next(psi_voxels* vox, psi_real* moments, psi_int* gridind) {
 		}
 
 		// split the poly and push children to the stack
-		psi_split_coord(&curpoly, &stack[*nstack], grid->d.xyz[spax]*(curpoly.ibox[0].ijk[spax]+dmax/2)+grid->window[0].xyz[spax], spax);
+		psi_split_coord(&curpoly, &stack[*nstack], 
+				grid->d.xyz[spax]*(curpoly.ibox[0].ijk[spax]+dmax/2)+grid->window[0].xyz[spax], spax);
 		memcpy(stack[*nstack].ibox, curpoly.ibox, 2*sizeof(psi_dvec));
 		stack[*nstack].ibox[1].ijk[spax] -= dmax-dmax/2; 
 		memcpy(stack[*nstack+1].ibox, curpoly.ibox, 2*sizeof(psi_dvec));

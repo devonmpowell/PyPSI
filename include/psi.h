@@ -37,6 +37,7 @@
 // Make dimensionality dynamic!
 #define PSI_NDIM 3
 
+#define PRINT_EVERY 1024
 
 
 // primitive types 

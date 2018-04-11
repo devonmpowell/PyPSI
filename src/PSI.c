@@ -816,6 +816,61 @@ static PyObject *PSI_voxels(PyObject *self, PyObject *args, PyObject* kwds) {
 	Py_RETURN_NONE;
 }
 
+
+static PyObject *PSI_VDF(PyObject *self, PyObject *args, PyObject* kwds) {
+
+	psi_int maxlvl;
+	psi_real reftol;
+	psi_rvec samppos;
+	psi_mesh cmesh;
+	Mesh* mesh;
+	PyObject* sPos;
+	npy_intp nverts;
+	static char *kwlist[] = {"mesh", "sample_pos", "refine_tolerance", "refine_max_lvl", NULL};
+
+	// defaults
+	reftol = 1.0;
+	maxlvl = 0;
+	if(!PyArg_ParseTupleAndKeywords(args, kwds, "OO|di", kwlist, &mesh, &sPos, &reftol, &maxlvl))
+		return NULL;
+
+
+	//psi_rvec samppos2;
+	//if(!PyArg_ParseTuple(sPos, "(ddd)(ddd)", &samppos.x, &samppos.y, &samppos.z, &samppos2.x, &samppos2.y, &samppos2.z))
+		//return NULL;
+	if(!PyArg_ParseTuple(sPos, "ddd", &samppos.x, &samppos.y, &samppos.z)) {
+		return NULL;
+	}
+
+	printf("samppos = %f %f %f\n", samppos.x, samppos.y, samppos.z);
+	//printf("samppos2 = %f %f %f\n", samppos2.x, samppos2.y, samppos2.z);
+
+	// extract C pointers and such
+	PSI_Mesh2mesh(mesh, &cmesh);
+
+	psi_real* rhoout;
+	psi_rvec* velout;
+	psi_int nsamp;
+
+	// call the C function
+	// TODO: allow passing of a user-made r* tree
+	psi_sample_vdf(samppos, &cmesh, NULL, 
+		&rhoout, &velout, &nsamp, reftol, maxlvl);
+
+	// make the return arrays from the c buffers
+	// force numpy to own the memory
+	npy_intp npdims[3];
+	npdims[0] = nsamp;
+	npdims[1] = 3;
+	PyObject* pyrho = PyArray_SimpleNewFromData(1, npdims, NPY_DOUBLE, rhoout);
+	PyObject* pyvel = PyArray_SimpleNewFromData(2, npdims, NPY_DOUBLE, velout);
+	PyArray_ENABLEFLAGS(pyrho, NPY_ARRAY_OWNDATA);
+	PyArray_ENABLEFLAGS(pyvel, NPY_ARRAY_OWNDATA);
+	return Py_BuildValue("OO", pyrho, pyvel);
+}
+
+
+
 static PyObject *PSI_phi(PyObject *self, PyObject *args, PyObject* kwds) {
 
 	psi_int ax;
@@ -912,6 +967,7 @@ static PyMethodDef module_methods[] = {
    	{"beamtrace", (PyCFunction)PSI_beamtrace, METH_KEYWORDS, "beamtrace"},
    	{"voxels", (PyCFunction)PSI_voxels, METH_KEYWORDS, "Voxelizes"},
    	{"phi", (PyCFunction)PSI_phi, METH_KEYWORDS, "phi"},
+   	{"VDF", (PyCFunction)PSI_VDF, METH_KEYWORDS, "VDF"},
    	{"powerSpectrum", (PyCFunction)PSI_powerSpectrum, METH_KEYWORDS, "powerSpectrum"},
     {NULL, NULL, 0, NULL}
 };

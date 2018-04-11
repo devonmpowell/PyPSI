@@ -18,8 +18,6 @@
 #include "geometry.h"
 //#include "particles.h"
 
-#define PRINT_EVERY 1024
-
 // internal top-level utilities
 void psi_aabb(psi_rvec* pos, psi_int nverts, psi_rvec* rbox);
 psi_int psi_aabb_periodic(psi_rvec* pos, psi_rvec* rbox, psi_rvec* window, psi_mesh* mesh); 
@@ -30,7 +28,7 @@ void psi_make_ghosts(psi_rvec* elems, psi_rvec* rboxes, psi_int* num, psi_int st
 void psi_voxels(psi_grid* grid, psi_mesh* mesh, psi_rtree* rtree, psi_int mode, psi_real reftol, psi_int max_ref_lvl) {
 
 	//setbuf(stdout, NULL);
-	psi_int e, g, t, v, nghosts, tind, internal_rtree, e1, t1, elemct, rtsz;
+	psi_int e, g, t, v, nghosts, tind, internal_rtree, e1, t1;
 
 	// a local copy of the position in case it is modified due to periodicity
 	psi_int vpere = mesh->elemtype;
@@ -54,30 +52,12 @@ void psi_voxels(psi_grid* grid, psi_mesh* mesh, psi_rtree* rtree, psi_int mode, 
 		psi_tet_buffer_init(&tetbuf1, reftol, max_ref_lvl);
 
 	// check to see if we must build an rtree for this function
-	// if so, create on and insert all elements 
-	// if they are in the projection window
+	// if so, create one from the mesh
 	internal_rtree = (mode == PSI_MODE_ANNIHILATION && rtree == NULL);
 	if(internal_rtree) {
-		psi_printf("No R*-tree given. Building one now...\n");
+		psi_printf("No R*-tree given. Building one now.\n");
 		rtree = &myrtree; 
-		rtsz = (psi_int)(0.05*mesh->nelem);
-		if(rtsz < MIN_RTREE_CAP) rtsz = MIN_RTREE_CAP;
-		psi_rtree_init(rtree, rtsz); // TODO: heuristic!!!
-		for(e = 0, elemct = 0; e < mesh->nelem; ++e) {
-			for(v = 0; v < vpere; ++v) {
-				tind = mesh->connectivity[e*vpere+v];
-				tpos[v] = mesh->pos[tind];
-			}
-			if(!psi_aabb_periodic(tpos, trbox, grid->window, mesh)) continue;
-			psi_rtree_insert(rtree, trbox, e);
-            elemct++;
-		    if(e%PRINT_EVERY==0)
-			    psi_printf("\rElement %d of %d, %.1f%%", e, mesh->nelem, (100.0*e)/mesh->nelem);
-#ifdef PYMODULE
-			PyErr_CheckSignals();
-#endif
-		}
-	    psi_printf("\ndone. Inserted %d elements.\n", elemct);
+		psi_rtree_from_mesh(rtree, mesh, grid->window);
 	}
 
 	// loop over all elements
@@ -175,6 +155,198 @@ void psi_voxels(psi_grid* grid, psi_mesh* mesh, psi_rtree* rtree, psi_int mode, 
 
 }
 
+void psi_sample_vdf(psi_rvec samppos, psi_mesh* mesh, psi_rtree* rtree, 
+		psi_real** rhoout, psi_rvec** velout, psi_int* nsamp , psi_real reftol, psi_int max_ref_lvl) {
+
+	psi_int i, j, t, e, v, tind, internal_rtree, capacity;
+	psi_rvec *pos, *vel;
+	psi_real mass, vol;
+	psi_real bcoords[(PSI_NDIM+1)];
+
+	psi_int vpere = mesh->elemtype;
+	psi_rvec tpos[vpere], tvel[vpere];
+	psi_real tmass;
+
+	// set up the return buffers
+	// NOTE: It is up to the user or to Python
+	// to manage these buffers after they are returned!!!
+	capacity = 1024; 
+	*rhoout = (psi_real*) psi_malloc(capacity*sizeof(psi_real));
+	*velout = (psi_rvec*) psi_malloc(capacity*sizeof(psi_rvec));
+	*nsamp = 0;
+
+	// constant-size buffer for max refinement level
+	psi_tet_buffer tetbuf;
+	psi_tet_buffer_init(&tetbuf, reftol, max_ref_lvl);
+
+	// check to see if we must build an rtree for this function
+	// if so, create one from the mesh
+	psi_rtree myrtree;
+	internal_rtree = (rtree == NULL);
+	if(internal_rtree) {
+		psi_printf("No R*-tree given. Building one now.\n");
+		rtree = &myrtree; 
+		psi_rtree_from_mesh(rtree, mesh, mesh->box);
+	}
+
+	// query the r*-tree using a degenerate query box
+	psi_rtree_query qry;
+	psi_rvec qbox[2];
+	qbox[0] = samppos;
+	qbox[1] = samppos;
+	psi_rtree_query_init(&qry, rtree, qbox);
+	while(psi_rtree_query_next(&qry, &e)) {
+
+		// get the overlapping element 
+		// refine the element into tetrahedra
+		tmass = mesh->mass[e]; 
+		for(v = 0; v < vpere; ++v) {
+			tind = mesh->connectivity[e*vpere+v];
+			tpos[v] = mesh->pos[tind];
+			tvel[v] = mesh->vel[tind];
+		}
+		psi_tet_buffer_refine(&tetbuf, tpos, tvel, tmass, mesh->elemtype);
+
+		// loop over each tet in the buffer and sample the vdf
+		for(t = 0; t < tetbuf.num; ++t) {
+			pos = &tetbuf.pos[(PSI_NDIM+1)*t];
+			vel = &tetbuf.vel[(PSI_NDIM+1)*t];
+			mass = tetbuf.mass[t];
+
+			// get the barycentric coordinates from the matrix inverse
+			// return if the point lies outside any face of the tet
+			// interpolate velocity and add the sample to the buffer
+			vol = psi_barycentric(pos, samppos, bcoords);
+
+			// skip fully degenerate tets
+			// skip if the sample point lies outside of the tet
+			if(vol <= 0.0) goto next_tet; 
+			for(i = 0; i < PSI_NDIM+1; ++i) 
+				if(bcoords[i] < 0.0) goto next_tet; 
+
+			// grow the buffer if needed
+			if(*nsamp >= capacity) {
+				capacity *= 2; 
+				*rhoout = (psi_real*) psi_realloc(*rhoout, capacity*sizeof(psi_real));
+				*velout = (psi_rvec*) psi_realloc(*velout, capacity*sizeof(psi_rvec));
+			}
+
+			// use the barycentric coordinates to sample the vdf and get the density
+			for(i = 0; i < PSI_NDIM; ++i) {
+				(*velout)[*nsamp].xyz[i] = 0.0; 
+				for(j = 0; j < PSI_NDIM+1; ++j)
+					(*velout)[*nsamp].xyz[i] += bcoords[j]*vel[j].xyz[i];
+			}
+			(*rhoout)[*nsamp] = mass/vol; // vol is guaranteed positive from psi_barycentric
+			(*nsamp)++;
+			next_tet: continue;
+		}
+	}
+
+	// free stuff
+	psi_tet_buffer_destroy(&tetbuf);
+	if(internal_rtree) 
+		psi_rtree_destroy(rtree);
+}
+
+void psi_aabb(psi_rvec* pos, psi_int nverts, psi_rvec* rbox) {
+	// get the bounding box 
+	psi_int i, v;
+	for(i = 0; i < 3; ++i) {
+		rbox[0].xyz[i] = 1.0e30;
+		rbox[1].xyz[i] = -1.0e30;
+	}
+	for(v = 0; v < nverts; ++v)
+	for(i = 0; i < 3; ++i) {
+		// TODO: This is naive wrt quadratic elements!
+		// Could cause mass loss around the edges
+		if(pos[v].xyz[i] < rbox[0].xyz[i]) rbox[0].xyz[i] = pos[v].xyz[i];
+		if(pos[v].xyz[i] > rbox[1].xyz[i]) rbox[1].xyz[i] = pos[v].xyz[i];
+	}
+}
+
+int psi_aabb_ixn(psi_rvec* rbox0, psi_rvec* rbox1, psi_rvec* ixn) {
+
+	// constructs the intersection bounding box
+	// returns 1 if they intersect, 0 if not
+	int i, ret;
+	for(i = 0; i < 3; ++i) {
+		ixn[0].xyz[i] = fmax(rbox0[0].xyz[i], rbox1[0].xyz[i]);
+		ixn[1].xyz[i] = fmin(rbox0[1].xyz[i], rbox1[1].xyz[i]);
+	}
+	for(i = 0, ret = 1; i < 3; ++i) {
+		ret &= (ixn[1].xyz[i] > ixn[0].xyz[i]);
+	}
+	return ret;
+}
+
+
+psi_int psi_aabb_periodic(psi_rvec* pos, psi_rvec* rbox, psi_rvec* window, psi_mesh* mesh) {
+
+	// pos and rbox can both be modified!
+	psi_int i, v;
+	psi_real span;
+
+	psi_aabb(pos, mesh->elemtype, rbox);
+
+	// if the grid is periodic, move the vertices as needed
+	if(mesh->periodic) {
+		for(i = 0; i < mesh->dim; ++i) {
+			span = mesh->box[1].xyz[i]-mesh->box[0].xyz[i];
+			if(rbox[1].xyz[i]-rbox[0].xyz[i] > 0.5*span) {
+				rbox[0].xyz[i] = 1.0e30;
+				rbox[1].xyz[i] = -1.0e30;
+				for(v = 0; v < mesh->elemtype; ++v) {
+					// wrap elements that cross the right-hand boundary while recomputing the box
+					if(pos[v].xyz[i] > mesh->box[0].xyz[i] + 0.5*span) pos[v].xyz[i] -= span;
+					if(pos[v].xyz[i] < rbox[0].xyz[i]) rbox[0].xyz[i] = pos[v].xyz[i];
+					if(pos[v].xyz[i] > rbox[1].xyz[i]) rbox[1].xyz[i] = pos[v].xyz[i];
+				}
+			}
+			if(rbox[0].xyz[i] > window[1].xyz[i]) return 0; 
+			if(rbox[1].xyz[i] < window[0].xyz[i]
+				&& rbox[0].xyz[i]+span > window[1].xyz[i]) return 0; 
+		}
+	}
+	else for(i = 0; i < mesh->dim; ++i) {
+		if(rbox[0].xyz[i] > window[1].xyz[i]) return 0; 
+		if(rbox[1].xyz[i] < window[0].xyz[i]) return 0;
+	}
+	return 1;
+}
+
+void psi_make_ghosts(psi_rvec* elems, psi_rvec* rboxes, psi_int* num, psi_int stride, psi_rvec* window, psi_mesh* mesh) {
+
+	psi_int i, p, v, pflags;
+	psi_real pshift;
+	psi_rvec span;
+
+	// if periodic, make ghosts on the fly
+	(*num) = 1;
+	pflags = 0;
+	if(mesh->periodic) {
+		for(i = 0; i < mesh->dim; ++i) {
+			span.xyz[i] = mesh->box[1].xyz[i]-mesh->box[0].xyz[i]; 
+			if(rboxes[0].xyz[i] < mesh->box[0].xyz[i]) pflags |= (1 << i);
+		}
+		for(p = 1; p < (1<<mesh->dim); ++p) {
+			if((pflags & p) == p) {
+				for(i = 0; i < mesh->dim; ++i) {
+					pshift = span.xyz[i]*(1 & (p >> i));
+					rboxes[2*(*num)+0].xyz[i] = rboxes[0].xyz[i] + pshift; 
+					rboxes[2*(*num)+1].xyz[i] = rboxes[1].xyz[i] + pshift;
+					if(rboxes[2*(*num)+0].xyz[i] > window[1].xyz[i]) goto next_shift;
+					if(rboxes[2*(*num)+1].xyz[i] < window[0].xyz[i]) goto next_shift;
+					for(v = 0; v < stride; ++v)
+						elems[stride*(*num)+v].xyz[i] = elems[v].xyz[i] + pshift; 
+				}
+				(*num)++;
+			}
+			next_shift: continue;
+		}	
+	}
+}
+
 
 #if 0
 
@@ -237,65 +409,6 @@ void psi_count_streams(psi_rtree* rtree, psi_rvec* samppos, psi_int* count, psi_
 	psi_tet_buffer_destroy(&tetbuf);
 }
 
-// TODO: do we call this with reftol in ctypes??
-psi_int psi_sample_vdf(psi_rtree* rtree, psi_rvec samppos, psi_real reftol, psi_real* rhoout, psi_rvec* velout, psi_int capacity) {
-
-	psi_int i, j, t, e, nsamp;
-	psi_rvec *pos, *vel;
-	psi_real mass, vol;
-	psi_real bcoords[(PSI_NDIM+1)];
-
-	// constant-size buffer for max refinement level
-	// TODO: user-issued max level
-	psi_tet_buffer tetbuf;
-	psi_int max_lvl = 4;
-	if(rtree->order == 0) max_lvl = 0;
-	psi_tet_buffer_init(&tetbuf, reftol, max_lvl);
-	nsamp = 0;
-
-	// query the r*-tree using a degenerate query box
-	psi_rtree_query qry;
-	psi_rvec qbox[2];
-	qbox[0] = samppos;
-	qbox[1] = samppos;
-	psi_rtree_query_init(&qry, rtree, qbox);
-	while(psi_rtree_query_next(&qry, &pos, &vel, &mass, &e)) {
-
-		// refine the element into tetrahedra
-		psi_tet_buffer_refine(&tetbuf, pos, vel, mass, rtree->order);
-
-		// loop over each tet in the buffer and sample the vdf
-		for(t = 0; t < tetbuf.num; ++t) {
-			pos = &tetbuf.pos[(PSI_NDIM+1)*t];
-			vel = &tetbuf.vel[(PSI_NDIM+1)*t];
-			mass = tetbuf.mass[t];
-
-			// get the barycentric coordinates from the matrix inverse
-			// return if the point lies outside any face of the tet
-			// interpolate velocity and add the sample to the buffer
-			vol = psi_barycentric(pos, samppos, bcoords);
-
-			// skip fully degenerate tets
-			// skip if the sample point lies outside of the tet
-			// return error if we are out of buffer space
-			if(!vol) goto next_tet; 
-			for(i = 0; i < PSI_NDIM+1; ++i) if(bcoords[i] < 0.0) goto next_tet; 
-			if(nsamp >= capacity) return -1;
-
-			// use the barycentric coordinates to sample the vdf and get the density
-			for(i = 0; i < PSI_NDIM; ++i) {
-				velout[nsamp].xyz[i] = 0.0; 
-				for(j = 0; j < PSI_NDIM+1; ++j)
-					velout[nsamp].xyz[i] += bcoords[j]*vel[j].xyz[i];
-			}
-			rhoout[nsamp] = mass/vol; // vol is guaranteed positive from psi_barycentric
-			nsamp++;
-			next_tet: continue;
-		}
-	}
-	psi_tet_buffer_destroy(&tetbuf);
-	return nsamp;
-}
 
 void psi_particle_mesh(psi_rvec* pos, psi_rvec* vel, psi_real* mass, psi_int npart, psi_dest_grid* grid) {
 
@@ -431,102 +544,4 @@ void psi_element_blocks_from_lg3(float* pos_in, float* vel_in, float* mass_in, p
 
 #endif
 
-
-void psi_aabb(psi_rvec* pos, psi_int nverts, psi_rvec* rbox) {
-	// get the bounding box 
-	psi_int i, v;
-	for(i = 0; i < 3; ++i) {
-		rbox[0].xyz[i] = 1.0e30;
-		rbox[1].xyz[i] = -1.0e30;
-	}
-	for(v = 0; v < nverts; ++v)
-	for(i = 0; i < 3; ++i) {
-		// TODO: This is naive wrt quadratic elements!
-		// Could cause mass loss around the edges
-		if(pos[v].xyz[i] < rbox[0].xyz[i]) rbox[0].xyz[i] = pos[v].xyz[i];
-		if(pos[v].xyz[i] > rbox[1].xyz[i]) rbox[1].xyz[i] = pos[v].xyz[i];
-	}
-}
-
-int psi_aabb_ixn(psi_rvec* rbox0, psi_rvec* rbox1, psi_rvec* ixn) {
-
-	// constructs the intersection bounding box
-	// returns 1 if they intersect, 0 if not
-	int i, ret;
-	for(i = 0; i < 3; ++i) {
-		ixn[0].xyz[i] = fmax(rbox0[0].xyz[i], rbox1[0].xyz[i]);
-		ixn[1].xyz[i] = fmin(rbox0[1].xyz[i], rbox1[1].xyz[i]);
-	}
-	for(i = 0, ret = 1; i < 3; ++i) {
-		ret &= (ixn[1].xyz[i] > ixn[0].xyz[i]);
-	}
-	return ret;
-}
-
-
-psi_int psi_aabb_periodic(psi_rvec* pos, psi_rvec* rbox, psi_rvec* window, psi_mesh* mesh) {
-
-	// pos and rbox can both be modified!
-	psi_int i, v;
-	psi_real span;
-
-	psi_aabb(pos, mesh->elemtype, rbox);
-
-	// if the grid is periodic, move the vertices as needed
-	if(mesh->periodic) {
-		for(i = 0; i < mesh->dim; ++i) {
-			span = mesh->box[1].xyz[i]-mesh->box[0].xyz[i];
-			if(rbox[1].xyz[i]-rbox[0].xyz[i] > 0.5*span) {
-				rbox[0].xyz[i] = 1.0e30;
-				rbox[1].xyz[i] = -1.0e30;
-				for(v = 0; v < mesh->elemtype; ++v) {
-					// wrap elements that cross the right-hand boundary while recomputing the box
-					if(pos[v].xyz[i] > mesh->box[0].xyz[i] + 0.5*span) pos[v].xyz[i] -= span;
-					if(pos[v].xyz[i] < rbox[0].xyz[i]) rbox[0].xyz[i] = pos[v].xyz[i];
-					if(pos[v].xyz[i] > rbox[1].xyz[i]) rbox[1].xyz[i] = pos[v].xyz[i];
-				}
-			}
-			if(rbox[0].xyz[i] > window[1].xyz[i]) return 0; 
-			if(rbox[1].xyz[i] < window[0].xyz[i]
-				&& rbox[0].xyz[i]+span > window[1].xyz[i]) return 0; 
-		}
-	}
-	else for(i = 0; i < mesh->dim; ++i) {
-		if(rbox[0].xyz[i] > window[1].xyz[i]) return 0; 
-		if(rbox[1].xyz[i] < window[0].xyz[i]) return 0;
-	}
-	return 1;
-}
-
-void psi_make_ghosts(psi_rvec* elems, psi_rvec* rboxes, psi_int* num, psi_int stride, psi_rvec* window, psi_mesh* mesh) {
-
-	psi_int i, p, v, pflags;
-	psi_real pshift;
-	psi_rvec span;
-
-	// if periodic, make ghosts on the fly
-	(*num) = 1;
-	pflags = 0;
-	if(mesh->periodic) {
-		for(i = 0; i < mesh->dim; ++i) {
-			span.xyz[i] = mesh->box[1].xyz[i]-mesh->box[0].xyz[i]; 
-			if(rboxes[0].xyz[i] < mesh->box[0].xyz[i]) pflags |= (1 << i);
-		}
-		for(p = 1; p < (1<<mesh->dim); ++p) {
-			if((pflags & p) == p) {
-				for(i = 0; i < mesh->dim; ++i) {
-					pshift = span.xyz[i]*(1 & (p >> i));
-					rboxes[2*(*num)+0].xyz[i] = rboxes[0].xyz[i] + pshift; 
-					rboxes[2*(*num)+1].xyz[i] = rboxes[1].xyz[i] + pshift;
-					if(rboxes[2*(*num)+0].xyz[i] > window[1].xyz[i]) goto next_shift;
-					if(rboxes[2*(*num)+1].xyz[i] < window[0].xyz[i]) goto next_shift;
-					for(v = 0; v < stride; ++v)
-						elems[stride*(*num)+v].xyz[i] = elems[v].xyz[i] + pshift; 
-				}
-				(*num)++;
-			}
-			next_shift: continue;
-		}	
-	}
-}
 

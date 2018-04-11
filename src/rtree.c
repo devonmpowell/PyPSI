@@ -16,6 +16,33 @@ void psi_rtree_insert(psi_rtree* rtree, psi_rvec* rbox, psi_int data) {
 	psi_rtree_insert_fancy(insert_data, 0, 0, rtree);
 }
 
+void psi_rtree_from_mesh(psi_rtree* rtree, psi_mesh* mesh, psi_rvec* window) {
+
+	psi_int e, v, rtsz, elemct, tind;
+	psi_int vpere = mesh->elemtype;
+	psi_rvec tpos[vpere], trbox[2];
+
+	// compute a good starting size and init the rtree
+	rtsz = (psi_int)(0.05*mesh->nelem);
+	if(rtsz < MIN_RTREE_CAP) rtsz = MIN_RTREE_CAP;
+	psi_rtree_init(rtree, rtsz); // TODO: heuristic!!!
+
+	// loop over all elements in the mesh to insert
+	for(e = 0, elemct = 0; e < mesh->nelem; ++e) {
+		for(v = 0; v < vpere; ++v) {
+			tind = mesh->connectivity[e*vpere+v];
+			tpos[v] = mesh->pos[tind];
+		}
+		if(!psi_aabb_periodic(tpos, trbox, window, mesh)) continue;
+		psi_rtree_insert(rtree, trbox, e);
+        elemct++;
+		//if(e%PRINT_EVERY==0)
+			//psi_printf("\rElement %d of %d, %.1f%%", e, mesh->nelem, (100.0*e)/mesh->nelem);
+	}
+	//psi_printf("\ndone. Inserted %d elements.\n", elemct);
+
+}
+
 void psi_rtree_query_init(psi_rtree_query* qry, psi_rtree* rtree, psi_rvec* qbox) {
 	qry->rtree = rtree;
 	qry->rbox = qbox;
