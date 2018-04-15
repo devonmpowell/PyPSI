@@ -72,16 +72,38 @@ class SamplingTests(TestCase):
         print
         snap = 'data/snapshot_010'
         mesh = psi.Mesh(filename=snap, loader='gadget2')
+        rst = psi.RStarTree(mesh)
 
-        sample_pos = (10.,10.,13.)
-        #sample_pos = ((19.,23.,29.),(10.,12.,13.))
-        #sample_pos = [19.,23.,29.]
+        for sample_pos in [(10.,10.,13.),(19.,23.,29.),(10.,12.,13.)]:
+            rho, vel = psi.VDF(mesh, sample_pos, tree=rst)
+            print 'Sampled %d streams' % len(rho)
+            print 'rho[0] =', rho[0]
+            print 'vel[0] =', vel[0]
 
-        rho, vel = psi.VDF(mesh, sample_pos)
+    def test_rtree(self):
 
-        print 'Sampled %d streams' % len(rho)
-        print 'rho =', rho
-        print 'vel =', vel
+        #return
+
+        # load a mesh, make a grid, and voxelize
+        print
+        snap = 'data/snapshot_010'
+        mesh = psi.Mesh(filename=snap, loader='gadget2')
+
+
+        rst = psi.RStarTree(mesh, initial_capacity=12)
+
+        qinds = rst.query(box=((10.,10.,10.,),(11.,11.2,11.3)))
+
+        print 'Queried indices from the tree!'
+        print 'Indices =', qinds.shape
+        print 'Connectivity =', mesh.connectivity[qinds].shape
+        print 'Elems =', mesh.pos[mesh.connectivity[qinds]].shape
+        print ' = Indices =', qinds[0]
+        print ' = Connectivity =', mesh.connectivity[qinds][0]
+        print ' = Elems =', mesh.pos[mesh.connectivity[qinds]][0]
+        
+        
+
 
 
 # tests FFT stuff.. potential, power spectrum, etc 

@@ -55,7 +55,7 @@ void psi_voxels(psi_grid* grid, psi_mesh* mesh, psi_rtree* rtree, psi_int mode, 
 	// if so, create one from the mesh
 	internal_rtree = (mode == PSI_MODE_ANNIHILATION && rtree == NULL);
 	if(internal_rtree) {
-		psi_printf("No R*-tree given. Building one now.\n");
+		psi_printf("Internal R*-tree needed (none provided).\n");
 		rtree = &myrtree; 
 		psi_rtree_from_mesh(rtree, mesh, grid->window);
 	}
@@ -184,7 +184,7 @@ void psi_sample_vdf(psi_rvec samppos, psi_mesh* mesh, psi_rtree* rtree,
 	psi_rtree myrtree;
 	internal_rtree = (rtree == NULL);
 	if(internal_rtree) {
-		psi_printf("No R*-tree given. Building one now.\n");
+		psi_printf("Internal R*-tree needed (none provided).\n");
 		rtree = &myrtree; 
 		psi_rtree_from_mesh(rtree, mesh, mesh->box);
 	}

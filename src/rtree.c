@@ -22,6 +22,8 @@ void psi_rtree_from_mesh(psi_rtree* rtree, psi_mesh* mesh, psi_rvec* window) {
 	psi_int vpere = mesh->elemtype;
 	psi_rvec tpos[vpere], trbox[2];
 
+	psi_printf("Building R*-tree from mesh... ");
+
 	// compute a good starting size and init the rtree
 	rtsz = (psi_int)(0.05*mesh->nelem);
 	if(rtsz < MIN_RTREE_CAP) rtsz = MIN_RTREE_CAP;
@@ -36,10 +38,8 @@ void psi_rtree_from_mesh(psi_rtree* rtree, psi_mesh* mesh, psi_rvec* window) {
 		if(!psi_aabb_periodic(tpos, trbox, window, mesh)) continue;
 		psi_rtree_insert(rtree, trbox, e);
         elemct++;
-		//if(e%PRINT_EVERY==0)
-			//psi_printf("\rElement %d of %d, %.1f%%", e, mesh->nelem, (100.0*e)/mesh->nelem);
 	}
-	//psi_printf("\ndone. Inserted %d elements.\n", elemct);
+	psi_printf("done. Inserted %d elements.\n", elemct);
 
 }
 
@@ -490,6 +490,8 @@ psi_int psi_rtree_min_overlap(psi_rtree_node* node, psi_rvec* rbox) {
 	return closest;
 }
 
+#if 0
+
 void psi_rtree_print_recursive(FILE* stream, psi_rtree* tree, psi_rtree_node* node, psi_int lvl) {
 	psi_int i, c;
 	fprintf(stream, "# Node at %p, lvl = %d, %d children:\n", node, lvl, node->nchildren);
@@ -521,3 +523,4 @@ void psi_rtree_tofile(char* fname, psi_rtree* tree) {
 	fclose(f);
 }
 
+#endif

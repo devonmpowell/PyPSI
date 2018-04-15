@@ -6,6 +6,7 @@
 #include "psi.h"
 #include "grid.h"
 #include "mesh.h"
+#include "rtree.h"
 #include "skymap.h"
 #include "beamtrace.h"
 #ifdef HAVE_FFTW
@@ -32,6 +33,12 @@ typedef struct {
 	PyObject* n; // number of cells in each dimension
 	PyObject* d; // tuple of dx in each dimension
 } Grid;
+
+typedef struct {
+    PyObject_HEAD
+	psi_rtree ctree; 
+} RStarTree;
+
 
 typedef struct {
     PyObject_HEAD
@@ -77,6 +84,7 @@ static void PSI_Mesh2mesh(Mesh* mesh, psi_mesh* cmesh) {
 
 	// set array pointers
 	// TODO: mass...
+	// TODO: increfs!!!
 	cmesh->pos = PyArray_DATA((PyArrayObject*)mesh->pos);
 	cmesh->vel = PyArray_DATA((PyArrayObject*)mesh->vel);
 	cmesh->mass = PyArray_DATA((PyArrayObject*)mesh->mass);
@@ -410,6 +418,146 @@ static PyTypeObject MeshType = {
     0,                         /* tp_alloc */
     Mesh_new,                 /* tp_new */
 };
+
+/////////////////////////////////////////////////////////////
+//     RStarTree
+/////////////////////////////////////////////////////////////
+
+
+static PyObject* RStarTree_query(RStarTree *self, PyObject *args, PyObject *kwds) {
+
+	psi_int e;
+	PyObject* box;
+	psi_rvec qbox[2];
+	npy_intp npdims[3];
+	static char *kwlist[] = {"box", NULL};
+
+	if(!PyArg_ParseTupleAndKeywords(args, kwds, "O", kwlist, &box))
+		return NULL;
+
+	// parse the query box, should be a tuple
+	if(!PyArg_ParseTuple(box, "(ddd)(ddd)", &qbox[0].x, &qbox[0].y, &qbox[0].z, 
+				&qbox[1].x, &qbox[1].y, &qbox[1].z))
+		return NULL;
+
+	// set up space to return all of the queried elements
+	psi_int capacity = 1024; 
+	psi_int nqry = 0;
+	psi_int* inds_out = (psi_int*) psi_malloc(capacity*sizeof(psi_int));
+
+	// query the rtree
+	psi_rtree_query qry;
+	psi_rtree_query_init(&qry, &self->ctree, qbox);
+	while(psi_rtree_query_next(&qry, &e)) {
+
+		// grow the buffer if needed
+		if(nqry >= capacity) {
+			capacity *= 2; 
+			inds_out = (psi_int*) psi_realloc(inds_out, capacity*sizeof(psi_int));
+		}
+		
+		// save the result in the return array
+		inds_out[nqry++] = e;
+	}
+
+	// give the buffer to a Numpy array and return
+	npdims[0] = nqry;
+	PyObject* pyinds = PyArray_SimpleNewFromData(1, npdims, NPY_INT32, inds_out);
+	PyArray_ENABLEFLAGS(pyinds, NPY_ARRAY_OWNDATA);
+	return Py_BuildValue("O", pyinds);
+
+}
+
+
+static int RStarTree_init(RStarTree *self, PyObject *args, PyObject *kwds) {
+
+	psi_int ax, dim, order, nside, npix, init_cap;
+	npy_intp npdims[3];
+	psi_mesh cmesh;
+	PyObject* mesh;
+	static char *kwlist[] = {"mesh", "initial_capacity", NULL};
+
+	// parse arguments differently depending on what the grid type is
+	// certain grid types must correspond to certain arg patterns
+	init_cap = 1024;
+	if(!PyArg_ParseTupleAndKeywords(args, kwds, "O|i", kwlist, &mesh, &init_cap))
+			return -1;
+
+	psi_printf("Initial capacity = %d\n", init_cap);
+
+	PSI_Mesh2mesh(mesh, &cmesh);
+
+	// TODO: NOT cmesh.box!!!
+	// TODO: pass inital capacity
+	psi_rtree_from_mesh(&self->ctree, &cmesh, &cmesh.box);
+
+    return 0;
+}
+
+static PyObject* RStarTree_new(PyTypeObject *type, PyObject *args, PyObject *kwds) {
+    RStarTree *self;
+    self = (RStarTree*)type->tp_alloc(type, 0);
+    return (PyObject*)self;
+}
+
+static void RStarTree_dealloc(RStarTree* self) {
+	psi_rtree_destroy(&self->ctree);
+    Py_TYPE(self)->tp_free((PyObject*)self);
+}
+
+static PyMemberDef RStarTree_members[] = {
+    {NULL}  /* Sentinel */
+};
+
+static PyMethodDef RStarTree_methods[] = {
+	{"query", (PyCFunction)RStarTree_query, METH_KEYWORDS,
+	 "Query the RStarTree."},
+    {NULL}  /* Sentinel */
+};
+
+static PyTypeObject RStarTreeType = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    "PSI.RStarTree",             /* tp_name */
+    sizeof(RStarTree),             /* tp_basicsize */
+    0,                         /* tp_itemsize */
+    (destructor)RStarTree_dealloc, /* tp_dealloc */
+    0,                         /* tp_print */
+    0,                         /* tp_getattr */
+    0,                         /* tp_setattr */
+    0,                         /* tp_compare */
+    0,                         /* tp_repr */
+    0,                         /* tp_as_number */
+    0,                         /* tp_as_sequence */
+    0,                         /* tp_as_mapping */
+    0,                         /* tp_hash */
+    0,                         /* tp_call */
+    0,                         /* tp_str */
+    0,                         /* tp_getattro */
+    0,                         /* tp_setattro */
+    0,                         /* tp_as_buffer */
+    Py_TPFLAGS_DEFAULT |
+        Py_TPFLAGS_BASETYPE,   /* tp_flags */
+    "Basic grid",           /* tp_doc */
+    0,                         /* tp_traverse */
+    0,                         /* tp_clear */
+    0,                         /* tp_richcompare */
+    0,                         /* tp_weaklistoffset */
+    0,                         /* tp_iter */
+    0,                         /* tp_iternext */
+    RStarTree_methods,             /* tp_methods */
+    RStarTree_members,             /* tp_members */
+    0,                         /* tp_getset */
+    0,                         /* tp_base */
+    0,                         /* tp_dict */
+    0,                         /* tp_descr_get */
+    0,                         /* tp_descr_set */
+    0,                         /* tp_dictoffset */
+    (initproc)RStarTree_init,      /* tp_init */
+    0,                         /* tp_alloc */
+    RStarTree_new,                 /* tp_new */
+};
+
+
 
 
 /////////////////////////////////////////////////////////////
@@ -823,15 +971,19 @@ static PyObject *PSI_VDF(PyObject *self, PyObject *args, PyObject* kwds) {
 	psi_real reftol;
 	psi_rvec samppos;
 	psi_mesh cmesh;
+	psi_rtree* ctree;
 	Mesh* mesh;
 	PyObject* sPos;
+	RStarTree* rst;
 	npy_intp nverts;
-	static char *kwlist[] = {"mesh", "sample_pos", "refine_tolerance", "refine_max_lvl", NULL};
+	static char *kwlist[] = {"mesh", "sample_pos", "tree", "refine_tolerance", "refine_max_lvl", NULL};
 
 	// defaults
 	reftol = 1.0;
 	maxlvl = 0;
-	if(!PyArg_ParseTupleAndKeywords(args, kwds, "OO|di", kwlist, &mesh, &sPos, &reftol, &maxlvl))
+	rst = NULL;
+	ctree=NULL;
+	if(!PyArg_ParseTupleAndKeywords(args, kwds, "OO|O!di", kwlist, &mesh, &sPos, &RStarTreeType, &rst, &reftol, &maxlvl))
 		return NULL;
 
 
@@ -852,9 +1004,12 @@ static PyObject *PSI_VDF(PyObject *self, PyObject *args, PyObject* kwds) {
 	psi_rvec* velout;
 	psi_int nsamp;
 
+	if(rst)
+		ctree = &rst->ctree;
+
 	// call the C function
 	// TODO: allow passing of a user-made r* tree
-	psi_sample_vdf(samppos, &cmesh, NULL, 
+	psi_sample_vdf(samppos, &cmesh, ctree, 
 		&rhoout, &velout, &nsamp, reftol, maxlvl);
 
 	// make the return arrays from the c buffers
@@ -991,6 +1146,11 @@ PyMODINIT_FUNC initPSI(void) {
 	if(PyType_Ready(&GridType) < 0) return;
 	Py_INCREF(&GridType);
 	PyModule_AddObject(m, "Grid", (PyObject*)&GridType);
+
+	// add the rtree type
+	if(PyType_Ready(&RStarTreeType) < 0) return;
+	Py_INCREF(&RStarTreeType);
+	PyModule_AddObject(m, "RStarTree", (PyObject*)&RStarTreeType);
 
 #if 0
 	// add the metric type
