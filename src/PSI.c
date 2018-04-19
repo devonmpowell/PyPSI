@@ -1031,7 +1031,7 @@ static PyObject *PSI_VDF(PyObject *self, PyObject *args, PyObject* kwds) {
 static PyObject *PSI_crossStreams(PyObject *self, PyObject *args, PyObject* kwds) {
 
 	psi_int nstreams, i, j, ax, ii, jj;
-	psi_real rhotot, vij;
+	psi_real rhotot, vij, myxsn;
 	psi_rvec samppos;
 	psi_mesh cmesh;
 	psi_rtree* ctree;
@@ -1045,7 +1045,8 @@ static PyObject *PSI_crossStreams(PyObject *self, PyObject *args, PyObject* kwds
     npy_intp* arshape;
 	static char *kwlist[] = {"rho", "vel", "xsnfunc", NULL};
 
-	if(!PyArg_ParseTupleAndKeywords(args, kwds, "OOO", kwlist, &nprho, &npvel, &xsnfunc))
+    xsnfunc = NULL;
+	if(!PyArg_ParseTupleAndKeywords(args, kwds, "OO|O", kwlist, &nprho, &npvel, &xsnfunc))
 		return NULL;
 
     // get C pointers to array data
@@ -1094,8 +1095,9 @@ static PyObject *PSI_crossStreams(PyObject *self, PyObject *args, PyObject* kwds
         vij = sqrt((vel[i].x-vel[j].x)*(vel[i].x-vel[j].x)
                 +(vel[i].y-vel[j].y)*(vel[i].y-vel[j].y)
                 +(vel[i].z-vel[j].z)*(vel[i].z-vel[j].z));
-        psi_real myxsn = PyFloat_AsDouble(PyObject_CallObject(xsnfunc, Py_BuildValue("(d)", vij)));
-        //psi_printf("My xsn = %f\n", myxsn);
+        myxsn = 1.0; 
+        if(xsnfunc)
+            myxsn = PyFloat_AsDouble(PyObject_CallObject(xsnfunc, Py_BuildValue("(d)", vij)));
         annihilation_rate += 0.5*rho[i]*rho[j]*myxsn;
     } 
 
