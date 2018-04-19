@@ -35,7 +35,7 @@ void psi_rtree_from_mesh(psi_rtree* rtree, psi_mesh* mesh, psi_rvec* window) {
 			tind = mesh->connectivity[e*vpere+v];
 			tpos[v] = mesh->pos[tind];
 		}
-		if(!psi_aabb_periodic(tpos, trbox, window, mesh)) continue;
+        if(!psi_aabb_periodic(tpos, trbox, window, mesh)) continue;
 		psi_rtree_insert(rtree, trbox, e);
         elemct++;
 	}

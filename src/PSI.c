@@ -472,6 +472,7 @@ static PyObject* RStarTree_query(RStarTree *self, PyObject *args, PyObject *kwds
 static int RStarTree_init(RStarTree *self, PyObject *args, PyObject *kwds) {
 
 	psi_int ax, dim, order, nside, npix, init_cap;
+    psi_rvec tbox[2];
 	npy_intp npdims[3];
 	psi_mesh cmesh;
 	PyObject* mesh;
@@ -487,9 +488,14 @@ static int RStarTree_init(RStarTree *self, PyObject *args, PyObject *kwds) {
 
 	PSI_Mesh2mesh(mesh, &cmesh);
 
-	// TODO: NOT cmesh.box!!!
+	// TODO: Better user-provided mesh handling 
+    for(ax = 0; ax < 3; ++ax) {
+        tbox[0].xyz[ax] = -1.0e10;
+        tbox[1].xyz[ax] = +1.0e10;
+    }
+
 	// TODO: pass inital capacity
-	psi_rtree_from_mesh(&self->ctree, &cmesh, &cmesh.box);
+	psi_rtree_from_mesh(&self->ctree, &cmesh, &tbox);
 
     return 0;
 }
@@ -994,9 +1000,6 @@ static PyObject *PSI_VDF(PyObject *self, PyObject *args, PyObject* kwds) {
 		return NULL;
 	}
 
-	printf("samppos = %f %f %f\n", samppos.x, samppos.y, samppos.z);
-	//printf("samppos2 = %f %f %f\n", samppos2.x, samppos2.y, samppos2.z);
-
 	// extract C pointers and such
 	PSI_Mesh2mesh(mesh, &cmesh);
 
@@ -1023,6 +1026,82 @@ static PyObject *PSI_VDF(PyObject *self, PyObject *args, PyObject* kwds) {
 	PyArray_ENABLEFLAGS(pyvel, NPY_ARRAY_OWNDATA);
 	return Py_BuildValue("OO", pyrho, pyvel);
 }
+
+
+static PyObject *PSI_crossStreams(PyObject *self, PyObject *args, PyObject* kwds) {
+
+	psi_int nstreams, i, j, ax, ii, jj;
+	psi_real rhotot, vij;
+	psi_rvec samppos;
+	psi_mesh cmesh;
+	psi_rtree* ctree;
+	Mesh* mesh;
+	PyObject* nprho;
+    PyObject* npvel; 
+    PyObject* xsnfunc; 
+	RStarTree* rst;
+	npy_intp nverts;
+	npy_intp npdims[3];
+    npy_intp* arshape;
+	static char *kwlist[] = {"rho", "vel", "xsnfunc", NULL};
+
+	if(!PyArg_ParseTupleAndKeywords(args, kwds, "OOO", kwlist, &nprho, &npvel, &xsnfunc))
+		return NULL;
+
+    // get C pointers to array data
+    // TODO: check array types!!!
+    // TODO: retrieve dimensions
+    arshape = PyArray_SHAPE(nprho); 
+    nstreams = arshape[0];
+    psi_real* rho = PyArray_DATA(nprho); 
+    psi_rvec* vel = PyArray_DATA(npvel); 
+
+    // compute the total density and bulk velocity
+    rhotot = 0.0;
+    npdims[0] = 3;
+    PyObject* pyvel = PyArray_SimpleNew(1, npdims, NPY_DOUBLE);
+    psi_real* vtot = (psi_real*) PyArray_DATA(pyvel); 
+    for(ax = 0; ax < 3; ++ax)
+        vtot[ax] = 0.0;
+    for(i = 0; i < nstreams; ++i) {
+        rhotot += rho[i];
+        for(ax = 0; ax < 3; ++ax)
+            vtot[ax] += rho[i]*vel[i].xyz[ax]; 
+    }
+    for(ax = 0; ax < 3; ++ax)
+        vtot[ax] /= rhotot; 
+
+    // velocity dispersion matrix
+    npdims[0] = 3;
+    npdims[1] = 3;
+    PyObject* pycov = PyArray_SimpleNew(2, npdims, NPY_DOUBLE);
+	psi_real* cov = (psi_real*) PyArray_DATA(pycov); 
+    memset(cov, 0, 9*sizeof(psi_real));
+    for(i = 0; i < nstreams; ++i) {
+        for(ii = 0; ii < 3; ++ii)
+        for(jj = 0; jj < 3; ++jj)
+            cov[3*ii+jj] += rho[i]*(vel[i].xyz[ii]-vtot[ii])*(vel[i].xyz[jj]-vtot[jj]);
+    }
+    for(ii = 0; ii < 3; ++ii)
+    for(jj = 0; jj < 3; ++jj)
+        cov[3*ii+jj] /= rhotot; 
+
+
+    // lastly do the velocity-dependent annihilation rate
+    psi_real annihilation_rate = 0.0;
+    for(i = 0; i < nstreams; ++i) 
+    for(j = 0; j < nstreams; ++j) {
+        vij = sqrt((vel[i].x-vel[j].x)*(vel[i].x-vel[j].x)
+                +(vel[i].y-vel[j].y)*(vel[i].y-vel[j].y)
+                +(vel[i].z-vel[j].z)*(vel[i].z-vel[j].z));
+        psi_real myxsn = PyFloat_AsDouble(PyObject_CallObject(xsnfunc, Py_BuildValue("(d)", vij)));
+        //psi_printf("My xsn = %f\n", myxsn);
+        annihilation_rate += 0.5*rho[i]*rho[j]*myxsn;
+    } 
+
+	return Py_BuildValue("idOOd", nstreams, rhotot, pyvel, pycov, annihilation_rate);
+}
+
 
 
 
@@ -1123,6 +1202,7 @@ static PyMethodDef module_methods[] = {
    	{"voxels", (PyCFunction)PSI_voxels, METH_KEYWORDS, "Voxelizes"},
    	{"phi", (PyCFunction)PSI_phi, METH_KEYWORDS, "phi"},
    	{"VDF", (PyCFunction)PSI_VDF, METH_KEYWORDS, "VDF"},
+   	{"crossStreams", (PyCFunction)PSI_crossStreams, METH_KEYWORDS, "crossStreams"},
    	{"powerSpectrum", (PyCFunction)PSI_powerSpectrum, METH_KEYWORDS, "powerSpectrum"},
     {NULL, NULL, 0, NULL}
 };
