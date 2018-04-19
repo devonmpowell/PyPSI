@@ -25,11 +25,11 @@ described in
 if you do not have a copy this is OK. PyPSI will simply be compiled without functions that use
 FFTs.
 
-- To use in Python, simply `import PyPSI` 
+- To use in Python, simply `import PSI as psi` or similar 
 
 
 ---
 
 ### Licensing: 
 
-???
+Coming soon?
