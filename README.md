@@ -1,5 +1,4 @@
-# PyPSI`
-## The Phase Space Intersector 
+## PSI: The Phase Space Intersector 
 
 A Python extension for volume-sampling and point-sampling cosmological density and velocity fields.
 
