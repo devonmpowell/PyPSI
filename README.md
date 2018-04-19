@@ -13,6 +13,8 @@ described in
 
 - PSI! 
 
+- Example code in `examples/`
+
 ---
 
 ### Usage:
@@ -20,10 +22,10 @@ described in
 - First, `git clone` the repository and `cd` into it 
 
 - Then, `python setup.py install`. You will be prompted for the location of the [FFTW3 library](http://www.fftw.org/); 
-if you do not have it installed this is OK. PyPSI will be compiled without functions that use
+if you do not have a copy this is OK. PyPSI will simply be compiled without functions that use
 FFTs.
 
-- To use in Python, simple `import PyPSI` 
+- To use in Python, simply `import PyPSI` 
 
 
 ---
