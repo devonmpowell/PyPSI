@@ -22,7 +22,7 @@ import numpy as np
 # =================================== #
 
 # Try changing this to 0, 1, or 2!
-order = 0
+order = 1
 
 # Change these to play with the refinement behavior
 reftol = 0.01
