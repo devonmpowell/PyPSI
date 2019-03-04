@@ -135,8 +135,32 @@ static void PSI_Grid2grid(Grid* grid, psi_grid* cgrid) {
 		cgrid->d.x = PyFloat_AsDouble(grid->d);
 	}
 
-	// temporary, just to get the mass array
-	cgrid->fields[0] = (psi_real*)PyArray_DATA((PyArrayObject*)PyDict_GetItemString(grid->fields, "m"));
+	if(PyDict_Check(grid->fields)) {
+	
+		PyObject *key, *value;
+		Py_ssize_t pos = 0;
+		while (PyDict_Next(grid->fields, &pos, &key, &value)) {
+			char* cstring = PyString_AsString(key);
+			if(strcmp(cstring, "m") == 0) {
+				cgrid->fields[PSI_GRID_M] = (psi_real*)PyArray_DATA((PyArrayObject*)PyDict_GetItemString(grid->fields, "m"));
+			}
+			else if(strcmp(cstring, "x") == 0) {
+				cgrid->fields[PSI_GRID_X] = (psi_real*)PyArray_DATA((PyArrayObject*)PyDict_GetItemString(grid->fields, "x"));
+			}
+			else if(strcmp(cstring, "v") == 0) {
+				cgrid->fields[PSI_GRID_V] = (psi_real*)PyArray_DATA((PyArrayObject*)PyDict_GetItemString(grid->fields, "v"));
+			}
+			else if(strcmp(cstring, "xx") == 0) {
+				cgrid->fields[PSI_GRID_XX] = (psi_real*)PyArray_DATA((PyArrayObject*)PyDict_GetItemString(grid->fields, "xx"));
+			}
+			else if(strcmp(cstring, "xv") == 0 || strcmp(cstring, "vx") == 0) {
+				cgrid->fields[PSI_GRID_XV] = (psi_real*)PyArray_DATA((PyArrayObject*)PyDict_GetItemString(grid->fields, "xv"));
+			}
+			else if(strcmp(cstring, "vv") == 0) {
+				cgrid->fields[PSI_GRID_VV] = (psi_real*)PyArray_DATA((PyArrayObject*)PyDict_GetItemString(grid->fields, "vv"));
+			}
+		}
+	}
 }
 
 static void PSI_Metric2metric(Metric* metric, psi_metric* cmetric) {
@@ -688,7 +712,8 @@ static int Grid_init(Grid *self, PyObject *args, PyObject *kwds) {
 	char* type;
 	npy_intp npdims[3];
 	PyObject* pytype;
-	static char *kwlist[] = {"type", "window", "n", NULL};
+	PyObject* fields;
+	static char *kwlist[] = {"type", "window", "n", "fields", NULL};
 	static char *kwlist_hpring[] = {"type", "n", NULL};
 
 	// default is a 32^3 unit box 
@@ -705,10 +730,11 @@ static int Grid_init(Grid *self, PyObject *args, PyObject *kwds) {
 	// parse arguments differently depending on what the grid type is
 	// certain grid types must correspond to certain arg patterns
 	type = PyString_AsString(PyDict_GetItemString(kwds, "type"));
+	fields = NULL;
 	if(strcmp(type, "cart") == 0 && 
-			PyArg_ParseTupleAndKeywords(args, kwds, "S|((ddd)(ddd))(iii)", kwlist, // for cart 
+			PyArg_ParseTupleAndKeywords(args, kwds, "S|((ddd)(ddd))(iii)O", kwlist, // for cart 
 			&pytype, &cgrid.window[0].x, &cgrid.window[0].y, &cgrid.window[0].z, 
-			&cgrid.window[1].x, &cgrid.window[1].y, &cgrid.window[1].z, &cgrid.n.i, &cgrid.n.j, &cgrid.n.k)) {
+			&cgrid.window[1].x, &cgrid.window[1].y, &cgrid.window[1].z, &cgrid.n.i, &cgrid.n.j, &cgrid.n.k, &fields)) {
 
 		// fill in all grid information as Python tuples
 		self->type = pytype; 
@@ -721,6 +747,60 @@ static int Grid_init(Grid *self, PyObject *args, PyObject *kwds) {
 		npdims[2] = cgrid.n.k;
 		dim = 3;
 		Py_XDECREF(pytype);
+
+		// make the fields dict
+		// now allocate numpy storage
+		self->fields = PyDict_New();
+		PyDict_SetItemString(self->fields, "m", PyArray_ZEROS(dim, npdims, NPY_DOUBLE, 0));
+		if(fields != NULL && fields != Py_None) {
+		    PyObject* seq, *item;
+		    int i, len;
+		    seq = PySequence_Fast(fields, "expected a sequence");
+		    len = PySequence_Size(fields);
+		    for (i = 0; i < len; i++) {
+		        item = PySequence_Fast_GET_ITEM(seq, i);
+				if(PyString_Check(item)) {
+					char* cstring = PyString_AsString(item);
+					if(strcmp(cstring, "m") == 0) {;}
+					else if(strcmp(cstring, "x") == 0) {
+						npdims[3] = 3; 
+						dim = 4;
+						PyDict_SetItemString(self->fields, "x", PyArray_ZEROS(dim, npdims, NPY_DOUBLE, 0));
+					}
+					else if(strcmp(cstring, "v") == 0) {
+						npdims[3] = 3; 
+						dim = 4;
+						PyDict_SetItemString(self->fields, "v", PyArray_ZEROS(dim, npdims, NPY_DOUBLE, 0));
+					}
+					else if(strcmp(cstring, "xx") == 0) {
+						npdims[3] = 3; 
+						npdims[4] = 3; 
+						dim = 5;
+						PyDict_SetItemString(self->fields, "xx", PyArray_ZEROS(dim, npdims, NPY_DOUBLE, 0));
+					}
+					else if(strcmp(cstring, "xv") == 0 || strcmp(cstring, "vx") == 0) {
+						npdims[3] = 3; 
+						npdims[4] = 3; 
+						dim = 5;
+						PyDict_SetItemString(self->fields, "xv", PyArray_ZEROS(dim, npdims, NPY_DOUBLE, 0));
+					}
+					else if(strcmp(cstring, "vv") == 0) {
+						npdims[3] = 3; 
+						npdims[4] = 3; 
+						dim = 5;
+						PyDict_SetItemString(self->fields, "vv", PyArray_ZEROS(dim, npdims, NPY_DOUBLE, 0));
+					}
+					else {
+						psi_printf("Unrecognized field identifier %s\n", cstring);
+					}
+				}
+				else {
+					psi_printf("Fields must be a string!");
+				}
+			}
+		    Py_DECREF(seq);
+		
+		}
 	}
 	else if(strcmp(type, "hpring") == 0 && 
 			PyArg_ParseTupleAndKeywords(args, kwds, "S|i", kwlist_hpring, &pytype, &cgrid.n.i)) {
@@ -737,16 +817,18 @@ static int Grid_init(Grid *self, PyObject *args, PyObject *kwds) {
 		npdims[0] = npix;
 		dim = 1;
 		Py_XDECREF(pytype);
+
+		// make the fields dict
+		// now allocate numpy storage
+		self->fields = PyDict_New();
+		PyDict_SetItemString(self->fields, "m", PyArray_ZEROS(dim, npdims, NPY_DOUBLE, 0));
+
 	}
 	else {
 		PyErr_SetString(PyExc_ValueError, "Invalid grid type.");
 		return -1;
 	}
 
-	// make the fields dict
-	// now allocate numpy storage
-	self->fields = PyDict_New();
-	PyDict_SetItemString(self->fields, "m", PyArray_ZEROS(dim, npdims, NPY_DOUBLE, 0));
     return 0;
 }
 
