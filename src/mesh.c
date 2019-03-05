@@ -162,14 +162,22 @@ int load_gadget2(psi_mesh* mesh, const char* filename) {
 			mesh->connectivity[8*elemind+locind] = vertind;
 		}
 	}
+
 	psi_printf("...done.\n");
 	return 1;
 }
 
 
+static const psi_int gevolution_ntile = 4;
+static const psi_int gevolution_ntile3 = 64;
+static const psi_int gevolution_flat_to_cube[64][3] = {{0, 0, 0}, {0, 0, 1}, {0, 1, 1}, {0, 1, 0}, {1, 1, 0}, {1, 1, 1}, {1, 0, 1}, {1, 0, 0}, {0, 0, 2}, {0, 0, 3}, {0, 1, 3}, {0, 1, 2}, {1, 1, 2}, {1, 1, 3}, {1, 0, 3}, {1, 0, 2}, {0, 2, 2}, {0, 2, 3}, {0, 3, 3}, {0, 3, 2}, {1, 3, 2}, {1, 3, 3}, {1, 2, 3}, {1, 2, 2}, {0, 2, 0}, {0, 2, 1}, {0, 3, 1}, {0, 3, 0}, {1, 3, 0}, {1, 3, 1}, {1, 2, 1}, {1, 2, 0}, {2, 2, 0}, {2, 2, 1}, {2, 3, 1}, {2, 3, 0}, {3, 3, 0}, {3, 3, 1}, {3, 2, 1}, {3, 2, 0}, {2, 2, 2}, {2, 2, 3}, {2, 3, 3}, {2, 3, 2}, {3, 3, 2}, {3, 3, 3}, {3, 2, 3}, {3, 2, 2}, {2, 0, 2}, {2, 0, 3}, {2, 1, 3}, {2, 1, 2}, {3, 1, 2}, {3, 1, 3}, {3, 0, 3}, {3, 0, 2}, {2, 0, 0}, {2, 0, 1}, {2, 1, 1}, {2, 1, 0}, {3, 1, 0}, {3, 1, 1}, {3, 0, 1}, {3, 0, 0}};
+static const psi_int gevolution_cube_to_flat[4][4][4] = {{{ 0, 1, 8, 9 }, { 3, 2, 11, 10 }, { 24, 25, 16, 17 }, { 27, 26, 19, 18 } }, { { 7, 6, 15, 14 }, { 4, 5, 12, 13 }, { 31, 30, 23, 22 }, { 28, 29, 20, 21 } }, { { 56, 57, 48, 49 }, { 59, 58, 51, 50 }, { 32, 33, 40, 41 }, { 35, 34, 43, 42 } }, { { 63, 62, 55, 54 }, { 60, 61, 52, 53 }, { 39, 38, 47, 46 }, { 36, 37, 44, 45 } } };
+
+
 int load_gevolution(psi_mesh* mesh, const char* filename) {
 
 	int blksize, p, e, nside, ii, jj, kk, i, j, k;
+	psi_int tile_nside, tile_ns2, tile_idx, part_idx, flat_tile_idx, ti, tj, tk, pi, pj, pk, pii, pjj, pkk, dti, dtj, dtk; 
 	int elemind, locind, vertind;
 	int load_mass;
 	gadget2header header;
@@ -245,64 +253,47 @@ int load_gevolution(psi_mesh* mesh, const char* filename) {
 	psi_free(tvel);
 	psi_free(tid);
 
-	// now build the mesh connectivity
-	// trilinear elements naturally
+	// generate the mesh connectivity
 	nside = floor(pow(mesh->npart+0.5, ONE_THIRD));
-	for(i = 0; i < nside; ++i)
-	for(j = 0; j < nside; ++j)
-	for(k = 0; k < nside; ++k) {
-		elemind = nside*nside*i + nside*j + k;
-		for(ii = 0; ii < 2; ++ii)
-		for(jj = 0; jj < 2; ++jj)
-		for(kk = 0; kk < 2; ++kk) {
-			locind = 4*ii + 2*jj + kk;
-			vertind = nside*nside*((i+ii)%nside)
-				+ nside*((j+jj)%nside) + ((k+kk)%nside);
-			mesh->connectivity[8*elemind+locind] = vertind;
-		}
-	}
-#if 1
-	nside = floor(pow(mesh->npart+0.5, ONE_THIRD));
-
-#define PPB 64
+	tile_nside = nside/gevolution_ntile;
+	tile_ns2 = tile_nside*tile_nside; 
 	for(p = 0; p < mesh->npart; ++p) {
 
-		psi_int block = p/PPB;
-		psi_int bind = p%PPB;
-		psi_int bi = bind/16;
-		psi_int bj = (bind - 16*bi)/4;
-		psi_int bk = (bind - 16*bi - 4*bj);
+		// index of the tile
+		tile_idx = p/gevolution_ntile3;
+		tk = tile_idx/tile_ns2;
+		tj = (tile_idx - tile_ns2*tk)/tile_nside;
+		ti = (tile_idx - tile_ns2*tk - tile_nside*tj);
 
-		if(bi > 2 || bj > 2 || bk > 2)
-			continue;
+		// particle indices within the tile
+		part_idx = p%gevolution_ntile3;
+		pi = gevolution_flat_to_cube[part_idx][0]; 
+		pj = gevolution_flat_to_cube[part_idx][1]; 
+		pk = gevolution_flat_to_cube[part_idx][2]; 
 
+		// build a logical cube of 8 neighbor particles
 		for(ii = 0; ii < 2; ++ii)
 		for(jj = 0; jj < 2; ++jj)
 		for(kk = 0; kk < 2; ++kk) {
+
+			// get the neighbor particle/block in Cartesian indices
+			pii = pi+ii;
+			pjj = pj+jj;
+			pkk = pk+kk;
+			dti = pii/gevolution_ntile; 
+			dtj = pjj/gevolution_ntile;
+			dtk = pkk/gevolution_ntile;
+			pii %= gevolution_ntile;
+			pjj %= gevolution_ntile;
+			pkk %= gevolution_ntile;
+			
+			// the tile index and global particle index
+			flat_tile_idx = ((ti+dti)%tile_nside) + tile_nside*((tj+dtj)%tile_nside) + tile_ns2*((tk+dtk)%tile_nside);
+			vertind = flat_tile_idx*gevolution_ntile3 + gevolution_cube_to_flat[pii][pjj][pkk];
 			locind = 4*ii + 2*jj + kk;
-			vertind = block*PPB + 16*(bi+ii)+4*(bj+jj)+(bk+kk);
 			mesh->connectivity[8*p+locind] = vertind;
 		}
-
 	}
-#else
-	// now build the mesh connectivity
-	// trilinear elements naturally
-	nside = floor(pow(mesh->npart+0.5, ONE_THIRD));
-	for(i = 0; i < nside; ++i)
-	for(j = 0; j < nside; ++j)
-	for(k = 0; k < nside; ++k) {
-		elemind = nside*nside*i + nside*j + k;
-		for(ii = 0; ii < 2; ++ii)
-		for(jj = 0; jj < 2; ++jj)
-		for(kk = 0; kk < 2; ++kk) {
-			locind = 4*ii + 2*jj + kk;
-			vertind = nside*nside*((i+ii)%nside)
-				+ nside*((j+jj)%nside) + ((k+kk)%nside);
-			mesh->connectivity[8*elemind+locind] = vertind;
-		}
-	}
-#endif
 
 	psi_printf("...done.\n");
 	return 1;

@@ -63,6 +63,9 @@ void psi_voxels(psi_grid* grid, psi_mesh* mesh, psi_rtree* rtree, psi_int mode, 
 	// loop over all elements
 	for(e = 0; e < mesh->nelem; ++e) {
 
+		if(e%PRINT_EVERY==0)
+			psi_printf("\rElement %d of %d, %.1f%%", e, mesh->nelem, (100.0*e)/mesh->nelem);
+
 		// a local copy of the element, in case it's modified
 		// make it periodic, get its bounding box, and check it against the grid
 		tmass = mesh->mass[e]; 
@@ -138,8 +141,6 @@ void psi_voxels(psi_grid* grid, psi_mesh* mesh, psi_rtree* rtree, psi_int mode, 
 			}
 		}
 
-		if(e%PRINT_EVERY==0)
-			psi_printf("\rElement %d of %d, %.1f%%", e, mesh->nelem, (100.0*e)/mesh->nelem);
 #ifdef PYMODULE
 		if(PyErr_CheckSignals() < 0)
 			return;

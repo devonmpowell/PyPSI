@@ -48,6 +48,7 @@ void psi_voxelize_tet(psi_rvec* pos, psi_rvec* vel, psi_real mass, psi_rvec* rbo
 	// set mass to the volume if volume-weighted
 	// TODO: this swaps vertices if needed. Maybe do a more naive implementation?
 	//if(grid->weight == PSI_GRID_MEIGHT_VOL) mass = psi_orient_tet(pos, vel); 
+	//mass = psi_orient_tet(pos, vel); 
 
 	// deformation matrices for the input tet's mass coordinates
 	for(i = 0; i < PSI_NDIM; ++i)
