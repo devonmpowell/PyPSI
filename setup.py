@@ -16,8 +16,8 @@ macros = [('PYMODULE', None), ('NPY_NO_DEPRECATED_API', 'NPY_1_7_API_VERSION'),]
 #fftw_home = "/usr/local/fftw3"
 fftw_home = "/usr/local"
 #fftw_home = "/scratch/users/dmpowel1/fftw-3.3.4"
-print "FFTW3 home directory (Enter for default %s):"%fftw_home,
-user_input = raw_input()
+print("FFTW3 home directory (Enter for default %s):"%fftw_home, end=' ')
+user_input = input()
 if not user_input.strip():
     user_input = fftw_home
 if os.path.isfile(user_input+"/lib/libfftw3.a"):
@@ -28,13 +28,13 @@ if os.path.isfile(user_input+"/lib/libfftw3.a"):
     macros.append(('HAVE_FFTW', None))
     srcfiles.append("src/fft.c")
 else:
-    print "Invalid FFTW path %s (libfftw3.a not found)"%fftw_home
+    print("Invalid FFTW path %s (libfftw3.a not found)"%fftw_home)
     user_input = ""
     while user_input not in ["Y", "n"]:
-        print " Continue without building FFTW functionality? [Y/n]:",
-        user_input = raw_input()
+        print(" Continue without building FFTW functionality? [Y/n]:", end=' ')
+        user_input = input()
     if user_input == "n":
-        print "Abort."
+        print("Abort.")
         sys.exit(0)
 
 
