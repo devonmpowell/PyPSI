@@ -18,6 +18,7 @@
 #define PyString_Check(x) (PyBytes_Check((x)))
 #define PyInt_AS_LONG(x) (PyLong_AsLong((x)))
 #define PyString_AsString(x) (PyUnicode_AsUTF8((x)))
+#define PyInt_Check(x) (PyLong_Check((x)))
 #endif
 
 /////////////////////////////////////////////////////////////
@@ -557,11 +558,19 @@ static PyMemberDef RStarTree_members[] = {
     {NULL}  /* Sentinel */
 };
 
+#if PY_MAJOR_VERSION >= 3
+static PyMethodDef RStarTree_methods[] = {
+	{"query", (PyCFunction)RStarTree_query, METH_KEYWORDS | METH_VARARGS,
+	 "Query the RStarTree."},
+    {NULL}  /* Sentinel */
+};
+#else
 static PyMethodDef RStarTree_methods[] = {
 	{"query", (PyCFunction)RStarTree_query, METH_KEYWORDS,
 	 "Query the RStarTree."},
     {NULL}  /* Sentinel */
 };
+#endif
 
 static PyTypeObject RStarTreeType = {
     PyVarObject_HEAD_INIT(NULL, 0)
@@ -881,11 +890,19 @@ static PyMemberDef Grid_members[] = {
     {NULL}  /* Sentinel */
 };
 
+#if PY_MAJOR_VERSION >= 3
+static PyMethodDef Grid_methods[] = {
+	{"getCellGeometry", (PyCFunction)Grid_getCellGeometry, METH_KEYWORDS | METH_VARARGS,
+	 "Get the vertices for the given cell."},
+    {NULL}  /* Sentinel */
+};
+#else
 static PyMethodDef Grid_methods[] = {
 	{"getCellGeometry", (PyCFunction)Grid_getCellGeometry, METH_KEYWORDS,
 	 "Get the vertices for the given cell."},
     {NULL}  /* Sentinel */
 };
+#endif
 
 static PyTypeObject GridType = {
     PyVarObject_HEAD_INIT(NULL, 0)
@@ -1333,7 +1350,7 @@ static PyMethodDef module_methods[] = {
 #endif
 
 
-PyMODINIT_FUNC initPSI(void) {
+PyMODINIT_FUNC PyInit_PSI(void) {
     PyObject* m;
 #if PY_MAJOR_VERSION >= 3
     m = PyModule_Create(&PSI);
