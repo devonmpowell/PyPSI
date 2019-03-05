@@ -1349,8 +1349,12 @@ static PyMethodDef module_methods[] = {
     };
 #endif
 
-
-PyMODINIT_FUNC PyInit_PSI(void) {
+#if PY_MAJOR_VERSION >= 3
+PyMODINIT_FUNC PyInit_PSI(void)
+#else
+PyMODINIT_FUNC initPSI(void)
+#endif
+{
     PyObject* m;
 #if PY_MAJOR_VERSION >= 3
     m = PyModule_Create(&PSI);
