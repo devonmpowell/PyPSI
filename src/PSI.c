@@ -758,8 +758,13 @@ static int Grid_init(Grid *self, PyObject *args, PyObject *kwds) {
 	// certain grid types must correspond to certain arg patterns
 	type = PyString_AsString(PyDict_GetItemString(kwds, "type"));
 	fields = NULL;
-	if(strcmp(type, "cart") == 0 && 
-			PyArg_ParseTupleAndKeywords(args, kwds, "S|((ddd)(ddd))(iii)O", kwlist, // for cart 
+	if(strcmp(type, "cart") == 0 &&
+			PyArg_ParseTupleAndKeywords(args, kwds,
+#if PY_MAJOR_VERSION >= 3
+			"O|((ddd)(ddd))(iii)O", kwlist, // for cart
+#else
+			"S|((ddd)(ddd))(iii)O", kwlist, // for cart
+#endif
 			&pytype, &cgrid.window[0].x, &cgrid.window[0].y, &cgrid.window[0].z, 
 			&cgrid.window[1].x, &cgrid.window[1].y, &cgrid.window[1].z, &cgrid.n.i, &cgrid.n.j, &cgrid.n.k, &fields)) {
 
@@ -800,7 +805,7 @@ static int Grid_init(Grid *self, PyObject *args, PyObject *kwds) {
 						PyDict_SetItemString(self->fields, "v", PyArray_ZEROS(dim, npdims, NPY_DOUBLE, 0));
 					}
 					else if(strcmp(cstring, "xx") == 0) {
-						npdims[3] = 3; 
+						npdims[3] = 3;
 						npdims[4] = 3; 
 						dim = 5;
 						PyDict_SetItemString(self->fields, "xx", PyArray_ZEROS(dim, npdims, NPY_DOUBLE, 0));
@@ -830,8 +835,12 @@ static int Grid_init(Grid *self, PyObject *args, PyObject *kwds) {
 		}
 	}
 	else if(strcmp(type, "hpring") == 0 && 
-			PyArg_ParseTupleAndKeywords(args, kwds, "S|i", kwlist_hpring, &pytype, &cgrid.n.i)) {
-
+#if PY_MAJOR_VERSION >= 3
+			PyArg_ParseTupleAndKeywords(args, kwds, "O|i", kwlist_hpring, &pytype, &cgrid.n.i)
+#else
+			PyArg_ParseTupleAndKeywords(args, kwds, "S|i", kwlist_hpring, &pytype, &cgrid.n.i)
+#endif
+	){
 		// for Healpix store n as (order, nside, npix)
 		self->type = pytype; 
 		order = floor(log2(cgrid.n.i+0.5));
