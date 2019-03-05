@@ -97,32 +97,50 @@ int load_gadget2(psi_mesh* mesh, const char* filename) {
 	}
 	float* tpos = (float*) psi_malloc(mesh->npart*sizeof(psi_rvec));
 	float* tvel = (float*) psi_malloc(mesh->npart*sizeof(psi_rvec));
-	int* tid = (int*) psi_malloc(mesh->npart*sizeof(psi_int));
 
 	printf("Hubble = %f\n", header.HubbleParam);
 	printf("Box = %f\n", header.BoxSize);
 	printf("load_mass = %d, mass = %f\n", load_mass, header.mass[1]);
+	printf("n_part = %d\n", mesh->npart);
 	
 	// read in position data
 	e = fread(&blksize, sizeof(int), 1, f);
-	assert(blksize==3*mesh->npart*sizeof(float));
+	psi_assert(blksize==3*mesh->npart*sizeof(float));
 	e = fread(tpos, 3*sizeof(float), mesh->npart, f);
 	e = fread(&blksize, sizeof(int), 1, f);
-	assert(blksize==3*mesh->npart*sizeof(float));
+	psi_assert(blksize==3*mesh->npart*sizeof(float));
 	
 	// read velocities
 	e = fread(&blksize, sizeof(int), 1, f);
-	assert(blksize==3*mesh->npart*sizeof(float));
+	psi_assert(blksize==3*mesh->npart*sizeof(float));
 	e = fread(tvel, 3*sizeof(float), mesh->npart, f);
 	e = fread(&blksize, sizeof(int), 1, f);
-	assert(blksize==3*mesh->npart*sizeof(float));
+	psi_assert(blksize==3*mesh->npart*sizeof(float));
 	
 	// read ids
+#if 0
+	long* tid = (long*) psi_malloc(mesh->npart*sizeof(psi_long));
 	e = fread(&blksize, sizeof(int), 1, f);
-	assert(blksize==mesh->npart*sizeof(int));
+	psi_assert(blksize==mesh->npart*sizeof(long));
+	e = fread(tid, sizeof(long), mesh->npart, f);
+	e = fread(&blksize, sizeof(int), 1, f);
+	psi_assert(blksize==mesh->npart*sizeof(long));
+       //{
+		//printf("FAIL. \n");
+		//exit(0);
+	//}
+#else
+	int* tid = (int*) psi_malloc(mesh->npart*sizeof(psi_int));
+	e = fread(&blksize, sizeof(int), 1, f);
+	psi_assert(blksize==mesh->npart*sizeof(int));
 	e = fread(tid, sizeof(int), mesh->npart, f);
 	e = fread(&blksize, sizeof(int), 1, f);
-	assert(blksize==mesh->npart*sizeof(int));
+	if(blksize!=mesh->npart*sizeof(int)) {
+		printf("FAIL. \n");
+		exit(0);
+	}
+
+#endif
 	
 	// close the input file
 	fclose(f);
@@ -130,6 +148,25 @@ int load_gadget2(psi_mesh* mesh, const char* filename) {
 	// make arrays for vertices
 	// NOTE: assumes the arrays have been malloced!
 	for(p = 0; p < mesh->npart; ++p) {
+
+		//if(p % 1024 == 0)
+		//printf("particle %d, id = %ld, pos = %f %f %f vel = %f %f %f\n", p, tid[p], tpos[3*p+0], tpos[3*p+1], tpos[3*p+2], tvel[3*p+0], tvel[3*p+1], tvel[3*p+2]);
+
+
+		if(tpos[3*p+0] == 256000. ||  tpos[3*p+1] == 256000. ||  tpos[3*p+2] == 256000.) {
+
+			printf("particle %d, id = %ld, pos = %f %f %f vel = %f %f %f\n", p, tid[p], tpos[3*p+0], tpos[3*p+1], tpos[3*p+2], tvel[3*p+0], tvel[3*p+1], tvel[3*p+2]);
+
+			tpos[3*p+0] -= 1.0e-3;
+			tpos[3*p+1] -= 1.0e-3;
+			tpos[3*p+2] -= 1.0e-3;
+		
+		}
+
+		//if(p >= 512)
+			//break;
+
+
 		mesh->pos[tid[p]].x = tpos[3*p+0];
 		mesh->pos[tid[p]].y = tpos[3*p+1];
 		mesh->pos[tid[p]].z = tpos[3*p+2];

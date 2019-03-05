@@ -141,7 +141,8 @@ void psi_voxels(psi_grid* grid, psi_mesh* mesh, psi_rtree* rtree, psi_int mode, 
 		if(e%PRINT_EVERY==0)
 			psi_printf("\rElement %d of %d, %.1f%%", e, mesh->nelem, (100.0*e)/mesh->nelem);
 #ifdef PYMODULE
-		PyErr_CheckSignals(); // TODO: why does this do nothing??
+		if(PyErr_CheckSignals() < 0)
+			return;
 #endif
 	}
 	psi_printf("\n");
