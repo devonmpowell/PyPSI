@@ -13,6 +13,13 @@
 #include "fft.h"
 #endif
 
+#if PY_MAJOR_VERSION >= 3
+#define PyInt_AsLong(x) (PyLong_AsLong((x)))
+#define PyString_Check(x) (PyBytes_Check((x)))
+#define PyInt_AS_LONG(x) (PyLong_AsLong((x)))
+#define PyString_AsString(x) (PyUnicode_AsUTF8((x)))
+#define PyInt_Check(x) (PyLong_Check((x)))
+#endif
 
 /////////////////////////////////////////////////////////////
 //   Define Python type structs and conversion functions up front 
@@ -135,8 +142,32 @@ static void PSI_Grid2grid(Grid* grid, psi_grid* cgrid) {
 		cgrid->d.x = PyFloat_AsDouble(grid->d);
 	}
 
-	// temporary, just to get the mass array
-	cgrid->fields[0] = (psi_real*)PyArray_DATA((PyArrayObject*)PyDict_GetItemString(grid->fields, "m"));
+	if(PyDict_Check(grid->fields)) {
+	
+		PyObject *key, *value;
+		Py_ssize_t pos = 0;
+		while (PyDict_Next(grid->fields, &pos, &key, &value)) {
+			char* cstring = PyString_AsString(key);
+			if(strcmp(cstring, "m") == 0) {
+				cgrid->fields[PSI_GRID_M] = (psi_real*)PyArray_DATA((PyArrayObject*)PyDict_GetItemString(grid->fields, "m"));
+			}
+			else if(strcmp(cstring, "x") == 0) {
+				cgrid->fields[PSI_GRID_X] = (psi_real*)PyArray_DATA((PyArrayObject*)PyDict_GetItemString(grid->fields, "x"));
+			}
+			else if(strcmp(cstring, "v") == 0) {
+				cgrid->fields[PSI_GRID_V] = (psi_real*)PyArray_DATA((PyArrayObject*)PyDict_GetItemString(grid->fields, "v"));
+			}
+			else if(strcmp(cstring, "xx") == 0) {
+				cgrid->fields[PSI_GRID_XX] = (psi_real*)PyArray_DATA((PyArrayObject*)PyDict_GetItemString(grid->fields, "xx"));
+			}
+			else if(strcmp(cstring, "xv") == 0 || strcmp(cstring, "vx") == 0) {
+				cgrid->fields[PSI_GRID_XV] = (psi_real*)PyArray_DATA((PyArrayObject*)PyDict_GetItemString(grid->fields, "xv"));
+			}
+			else if(strcmp(cstring, "vv") == 0) {
+				cgrid->fields[PSI_GRID_VV] = (psi_real*)PyArray_DATA((PyArrayObject*)PyDict_GetItemString(grid->fields, "vv"));
+			}
+		}
+	}
 }
 
 static void PSI_Metric2metric(Metric* metric, psi_metric* cmetric) {
@@ -297,9 +328,15 @@ static int Mesh_init(Mesh *self, PyObject *args, PyObject *kwds) {
 		}
 
 	}
-	else if(strcmp(cloader, "gadget2") == 0) {
+	else if(strcmp(cloader, "gadget2") == 0 || 
+			strcmp(cloader, "gevolution") == 0) {
 
-		psi_printf("Using the Gadget2 loader.\n");
+		if(strcmp(cloader, "gadget2") == 0) {
+			psi_printf("Using the Gadget2 loader.\n");
+		} 
+		else if(strcmp(cloader, "gevolution") == 0) {
+			psi_printf("Using the Gevolution loader.\n");
+		} 
 
 		// peek at the file first to make sure it's there
 		// and to get header information
@@ -334,8 +371,14 @@ static int Mesh_init(Mesh *self, PyObject *args, PyObject *kwds) {
 		cmesh.connectivity = PyArray_DATA((PyArrayObject*)self->connectivity);
 
 		// load the data into the numpy buffers
-		if(!load_gadget2(&cmesh, cfile))
-			return -1;
+		if(strcmp(cloader, "gadget2") == 0) {
+			if(!load_gadget2(&cmesh, cfile))
+				return -1;
+		} 
+		else if(strcmp(cloader, "gevolution") == 0) {
+			if(!load_gevolution(&cmesh, cfile))
+				return -1;
+		} 
 
 	}
 	else {
@@ -515,11 +558,19 @@ static PyMemberDef RStarTree_members[] = {
     {NULL}  /* Sentinel */
 };
 
+#if PY_MAJOR_VERSION >= 3
+static PyMethodDef RStarTree_methods[] = {
+	{"query", (PyCFunction)RStarTree_query, METH_KEYWORDS | METH_VARARGS,
+	 "Query the RStarTree."},
+    {NULL}  /* Sentinel */
+};
+#else
 static PyMethodDef RStarTree_methods[] = {
 	{"query", (PyCFunction)RStarTree_query, METH_KEYWORDS,
 	 "Query the RStarTree."},
     {NULL}  /* Sentinel */
 };
+#endif
 
 static PyTypeObject RStarTreeType = {
     PyVarObject_HEAD_INIT(NULL, 0)
@@ -688,7 +739,8 @@ static int Grid_init(Grid *self, PyObject *args, PyObject *kwds) {
 	char* type;
 	npy_intp npdims[3];
 	PyObject* pytype;
-	static char *kwlist[] = {"type", "window", "n", NULL};
+	PyObject* fields;
+	static char *kwlist[] = {"type", "window", "n", "fields", NULL};
 	static char *kwlist_hpring[] = {"type", "n", NULL};
 
 	// default is a 32^3 unit box 
@@ -705,10 +757,16 @@ static int Grid_init(Grid *self, PyObject *args, PyObject *kwds) {
 	// parse arguments differently depending on what the grid type is
 	// certain grid types must correspond to certain arg patterns
 	type = PyString_AsString(PyDict_GetItemString(kwds, "type"));
-	if(strcmp(type, "cart") == 0 && 
-			PyArg_ParseTupleAndKeywords(args, kwds, "S|((ddd)(ddd))(iii)", kwlist, // for cart 
+	fields = NULL;
+	if(strcmp(type, "cart") == 0 &&
+			PyArg_ParseTupleAndKeywords(args, kwds,
+#if PY_MAJOR_VERSION >= 3
+			"O|((ddd)(ddd))(iii)O", kwlist, // for cart
+#else
+			"S|((ddd)(ddd))(iii)O", kwlist, // for cart
+#endif
 			&pytype, &cgrid.window[0].x, &cgrid.window[0].y, &cgrid.window[0].z, 
-			&cgrid.window[1].x, &cgrid.window[1].y, &cgrid.window[1].z, &cgrid.n.i, &cgrid.n.j, &cgrid.n.k)) {
+			&cgrid.window[1].x, &cgrid.window[1].y, &cgrid.window[1].z, &cgrid.n.i, &cgrid.n.j, &cgrid.n.k, &fields)) {
 
 		// fill in all grid information as Python tuples
 		self->type = pytype; 
@@ -721,10 +779,68 @@ static int Grid_init(Grid *self, PyObject *args, PyObject *kwds) {
 		npdims[2] = cgrid.n.k;
 		dim = 3;
 		Py_XDECREF(pytype);
+
+		// make the fields dict
+		// now allocate numpy storage
+		self->fields = PyDict_New();
+		PyDict_SetItemString(self->fields, "m", PyArray_ZEROS(dim, npdims, NPY_DOUBLE, 0));
+		if(fields != NULL && fields != Py_None) {
+		    PyObject* seq, *item;
+		    int i, len;
+		    seq = PySequence_Fast(fields, "expected a sequence");
+		    len = PySequence_Size(fields);
+		    for (i = 0; i < len; i++) {
+		        item = PySequence_Fast_GET_ITEM(seq, i);
+				if(PyString_Check(item)) {
+					char* cstring = PyString_AsString(item);
+					if(strcmp(cstring, "m") == 0) {;}
+					else if(strcmp(cstring, "x") == 0) {
+						npdims[3] = 3; 
+						dim = 4;
+						PyDict_SetItemString(self->fields, "x", PyArray_ZEROS(dim, npdims, NPY_DOUBLE, 0));
+					}
+					else if(strcmp(cstring, "v") == 0) {
+						npdims[3] = 3; 
+						dim = 4;
+						PyDict_SetItemString(self->fields, "v", PyArray_ZEROS(dim, npdims, NPY_DOUBLE, 0));
+					}
+					else if(strcmp(cstring, "xx") == 0) {
+						npdims[3] = 3;
+						npdims[4] = 3; 
+						dim = 5;
+						PyDict_SetItemString(self->fields, "xx", PyArray_ZEROS(dim, npdims, NPY_DOUBLE, 0));
+					}
+					else if(strcmp(cstring, "xv") == 0 || strcmp(cstring, "vx") == 0) {
+						npdims[3] = 3; 
+						npdims[4] = 3; 
+						dim = 5;
+						PyDict_SetItemString(self->fields, "xv", PyArray_ZEROS(dim, npdims, NPY_DOUBLE, 0));
+					}
+					else if(strcmp(cstring, "vv") == 0) {
+						npdims[3] = 3; 
+						npdims[4] = 3; 
+						dim = 5;
+						PyDict_SetItemString(self->fields, "vv", PyArray_ZEROS(dim, npdims, NPY_DOUBLE, 0));
+					}
+					else {
+						psi_printf("Unrecognized field identifier %s\n", cstring);
+					}
+				}
+				else {
+					psi_printf("Fields must be a string!");
+				}
+			}
+		    Py_DECREF(seq);
+		
+		}
 	}
 	else if(strcmp(type, "hpring") == 0 && 
-			PyArg_ParseTupleAndKeywords(args, kwds, "S|i", kwlist_hpring, &pytype, &cgrid.n.i)) {
-
+#if PY_MAJOR_VERSION >= 3
+			PyArg_ParseTupleAndKeywords(args, kwds, "O|i", kwlist_hpring, &pytype, &cgrid.n.i)
+#else
+			PyArg_ParseTupleAndKeywords(args, kwds, "S|i", kwlist_hpring, &pytype, &cgrid.n.i)
+#endif
+	){
 		// for Healpix store n as (order, nside, npix)
 		self->type = pytype; 
 		order = floor(log2(cgrid.n.i+0.5));
@@ -737,16 +853,18 @@ static int Grid_init(Grid *self, PyObject *args, PyObject *kwds) {
 		npdims[0] = npix;
 		dim = 1;
 		Py_XDECREF(pytype);
+
+		// make the fields dict
+		// now allocate numpy storage
+		self->fields = PyDict_New();
+		PyDict_SetItemString(self->fields, "m", PyArray_ZEROS(dim, npdims, NPY_DOUBLE, 0));
+
 	}
 	else {
 		PyErr_SetString(PyExc_ValueError, "Invalid grid type.");
 		return -1;
 	}
 
-	// make the fields dict
-	// now allocate numpy storage
-	self->fields = PyDict_New();
-	PyDict_SetItemString(self->fields, "m", PyArray_ZEROS(dim, npdims, NPY_DOUBLE, 0));
     return 0;
 }
 
@@ -781,11 +899,19 @@ static PyMemberDef Grid_members[] = {
     {NULL}  /* Sentinel */
 };
 
+#if PY_MAJOR_VERSION >= 3
+static PyMethodDef Grid_methods[] = {
+	{"getCellGeometry", (PyCFunction)Grid_getCellGeometry, METH_KEYWORDS | METH_VARARGS,
+	 "Get the vertices for the given cell."},
+    {NULL}  /* Sentinel */
+};
+#else
 static PyMethodDef Grid_methods[] = {
 	{"getCellGeometry", (PyCFunction)Grid_getCellGeometry, METH_KEYWORDS,
 	 "Get the vertices for the given cell."},
     {NULL}  /* Sentinel */
 };
+#endif
 
 static PyTypeObject GridType = {
     PyVarObject_HEAD_INIT(NULL, 0)
@@ -1198,6 +1324,18 @@ static PyObject *PSI_powerSpectrum(PyObject *self, PyObject *args, PyObject* kwd
 #define PyMODINIT_FUNC void
 #endif
 
+#if PY_MAJOR_VERSION >= 3
+static PyMethodDef module_methods[] = {
+    {"skymap", (PyCFunction)PSI_skymap, METH_KEYWORDS | METH_VARARGS, "Makes a skymap"},
+    {"beamtrace", (PyCFunction)PSI_beamtrace, METH_KEYWORDS | METH_VARARGS, "beamtrace"},
+    {"voxels", (PyCFunction)PSI_voxels, METH_KEYWORDS | METH_VARARGS, "Voxelizes"},
+    {"phi", (PyCFunction)PSI_phi, METH_KEYWORDS | METH_VARARGS, "phi"},
+    {"VDF", (PyCFunction)PSI_VDF, METH_KEYWORDS | METH_VARARGS, "VDF"},
+    {"crossStreams", (PyCFunction)PSI_crossStreams, METH_KEYWORDS | METH_VARARGS, "crossStreams"},
+    {"powerSpectrum", (PyCFunction)PSI_powerSpectrum, METH_KEYWORDS | METH_VARARGS, "powerSpectrum"},
+    {NULL, NULL, 0, NULL}
+};
+#else
 static PyMethodDef module_methods[] = {
    	{"skymap", (PyCFunction)PSI_skymap, METH_KEYWORDS, "Makes a skymap"},
    	{"beamtrace", (PyCFunction)PSI_beamtrace, METH_KEYWORDS, "beamtrace"},
@@ -1208,11 +1346,31 @@ static PyMethodDef module_methods[] = {
    	{"powerSpectrum", (PyCFunction)PSI_powerSpectrum, METH_KEYWORDS, "powerSpectrum"},
     {NULL, NULL, 0, NULL}
 };
+#endif
 
-PyMODINIT_FUNC initPSI(void) {
+#if PY_MAJOR_VERSION >= 3
+    static struct PyModuleDef PSI = {
+        PyModuleDef_HEAD_INIT,
+        "PSI",     /* m_name */
+        "PSI, the phase space intersector",  /* m_doc */
+        -1,                  /* m_size */
+        module_methods    /* m_methods */
+    };
+#endif
+
+#if PY_MAJOR_VERSION >= 3
+PyMODINIT_FUNC PyInit_PSI(void)
+#else
+PyMODINIT_FUNC initPSI(void)
+#endif
+{
     PyObject* m;
+#if PY_MAJOR_VERSION >= 3
+    m = PyModule_Create(&PSI);
+#else
     m = Py_InitModule3("PSI", module_methods,
-	       "PSI, the phase space intersector");
+          "PSI, the phase space intersector");
+#endif
     if(!m) return;
 
 	// import numpy functionality
@@ -1241,6 +1399,9 @@ PyMODINIT_FUNC initPSI(void) {
 	PyModule_AddObject(m, "Metric", (PyObject*)&MetricType);
 #endif
 
+#if PY_MAJOR_VERSION >= 3
+	return m;
+#endif
 
 	// TODO: add macroed constants to the Python module 
 }

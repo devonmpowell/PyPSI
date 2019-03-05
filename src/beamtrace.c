@@ -709,8 +709,9 @@ void psi_beamtrace(psi_grid* grid, psi_mesh* mesh, psi_int bstep, psi_metric* me
 		if(p%512==0)
 			psi_printf("\rPixel %d of %d, %.1f%%", p, grid->n.k, (100.0*p)/grid->n.k);
 
-#ifdef PYMODULE 
-		PyErr_CheckSignals();
+#ifdef PYMODULE
+		if(PyErr_CheckSignals() < 0)
+			return;
 #endif
 	}
 

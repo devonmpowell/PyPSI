@@ -35,6 +35,7 @@ void psi_mesh_destroy(psi_mesh* mesh);
 int peek_gadget2(psi_mesh* mesh, const char* filename);
 int load_gadget2(psi_mesh* mesh, const char* filename);
 
-
+#define PSI_MESH_GEVOLUTION 1
+int load_gevolution(psi_mesh* mesh, const char* filename);
 
 #endif // _MESH_H_

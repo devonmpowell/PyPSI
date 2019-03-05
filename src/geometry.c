@@ -13,27 +13,26 @@
 // struct to voxelize a polyhedron
 // contains a stack and some grid information
 typedef struct {
-	psi_poly stack[32]; // TODO: how big to make this??
+	psi_poly stack[64];
 	psi_int nstack;
+	psi_int polyorder;
 	psi_grid* grid;
 } psi_voxels;
-void psi_voxels_init(psi_voxels* vox, psi_poly* poly, psi_rvec* rbox, psi_grid* grid);
+void psi_voxels_init(psi_voxels* vox, psi_poly* poly, psi_int polyorder, psi_rvec* rbox, psi_grid* grid);
 psi_int psi_voxels_next(psi_voxels* vox, psi_real* moments, psi_int* gridind);
 
-void psi_clip(psi_poly* poly, psi_plane* planes, psi_int nplanes);
-
 // internal declarations for very low-level voxelization routines
+void psi_clip(psi_poly* poly, psi_plane* planes, psi_int nplanes);
 void psi_split_coord(psi_poly* inpoly, psi_poly* outpolys, psi_real coord, psi_int ax);
 void psi_reduce(psi_poly* poly, psi_real* moments, psi_int polyorder, psi_int weight);
-
 void psi_init_tet(psi_poly* poly, psi_rvec* verts);
-
 psi_real psi_orient_tet(psi_rvec* pos, psi_rvec* vel);
 
 
+// the top-level voxelization routine
 void psi_voxelize_tet(psi_rvec* pos, psi_rvec* vel, psi_real mass, psi_rvec* rbox, psi_grid* grid) {
 
-	psi_int i, j, ii, jj, gridind;
+	psi_int i, j, ii, jj, gridind, polyorder;
 	psi_real cm[PSI_NDIM], cv[PSI_NDIM], sxx[PSI_NDIM][PSI_NDIM], sxv[PSI_NDIM][PSI_NDIM], svv[PSI_NDIM][PSI_NDIM];
 	psi_real cwght, dwght;
 	psi_real DX[PSI_NDIM][PSI_NDIM], DV[PSI_NDIM][PSI_NDIM];
@@ -61,9 +60,18 @@ void psi_voxelize_tet(psi_rvec* pos, psi_rvec* vel, psi_real mass, psi_rvec* rbo
 	// and clamp it to the grid
 	psi_init_tet(&curpoly, pos);
 
+	// determine the correct poly order
+	polyorder = 0;
+	if(grid->fields[PSI_GRID_X] || grid->fields[PSI_GRID_V]) {
+		polyorder = 1;	
+	}
+	if(grid->fields[PSI_GRID_XX] || grid->fields[PSI_GRID_XV] || grid->fields[PSI_GRID_VV]) {
+		polyorder = 2;	
+	}
+
 	// initialize the voxelization iterator
 	psi_voxels vox;
-	psi_voxels_init(&vox, &curpoly, rbox, grid);
+	psi_voxels_init(&vox, &curpoly, polyorder, rbox, grid);
 	while(psi_voxels_next(&vox, moments, &gridind)) {
 	
 		// get moments for this fragment from the mass coordinates 
@@ -77,7 +85,7 @@ void psi_voxelize_tet(psi_rvec* pos, psi_rvec* vel, psi_real mass, psi_rvec* rbo
 		if(grid->fields[PSI_GRID_V])
 			for(i = 0; i < PSI_NDIM; ++i) {
 				cv[i] = moments[0]*vel[0].xyz[i];
-				for(j = 0; j < PSI_NDIM; ++j)
+				for(j = 0; j < PSI_NDIM; ++j) 
 					cv[i] += moments[j+1]*DV[i][j];
 				cv[i] /= moments[0];
 			}
@@ -125,6 +133,7 @@ void psi_voxelize_tet(psi_rvec* pos, psi_rvec* vel, psi_real mass, psi_rvec* rbo
 		}
 
 		// update everything online 
+		// TODO: go back to adding up just the raw moments...
 		cwght = mass*moments[0]/(grid->fields[PSI_GRID_M][gridind] + mass*moments[0]); 
 		dwght = grid->fields[PSI_GRID_M][gridind]/(grid->fields[PSI_GRID_M][gridind] + mass*moments[0]); 
 		if(grid->fields[PSI_GRID_XX]) for(i = 0; i < PSI_NDIM; ++i) for(j = 0; j < PSI_NDIM; ++j) {
@@ -209,7 +218,7 @@ void psi_voxelize_annihilation(psi_rvec* pos0, psi_rvec* vel0, psi_real mass0,
 
 	// voxelize the intersection
 	psi_clip(&curpoly, faces, 4);
-	psi_voxels_init(&vox, &curpoly, mbox, grid);
+	psi_voxels_init(&vox, &curpoly, 0, mbox, grid);
 	while(psi_voxels_next(&vox, moments, &gridind)) {
 		grid->fields[PSI_GRID_M][gridind] += rho0*rho1*vol0*moments[0];
 	}
@@ -767,7 +776,7 @@ void psi_init_tet(psi_poly* poly, psi_rvec* pos) {
 	for(v = 0; v < PSI_NDIM+1; ++v) poly->verts[v].pos = pos[v];
 }
 
-void psi_voxels_init(psi_voxels* vox, psi_poly* poly, psi_rvec* rbox, psi_grid* grid) {
+void psi_voxels_init(psi_voxels* vox, psi_poly* poly, psi_int polyorder, psi_rvec* rbox, psi_grid* grid) {
 
 	psi_int i, cliplo, cliphi, nplanes;
 	psi_real cmin, cmax;
@@ -807,6 +816,7 @@ void psi_voxels_init(psi_voxels* vox, psi_poly* poly, psi_rvec* rbox, psi_grid* 
 	psi_clip(poly, planes, nplanes);
 
 	// initialize the stack
+	vox->polyorder = polyorder;
 	vox->grid = grid;
 	vox->stack[0] = *poly;
 	vox->nstack = 1;
@@ -836,7 +846,7 @@ psi_int psi_voxels_next(psi_voxels* vox, psi_real* moments, psi_int* gridind) {
 		if(dmax == 1) {
 			// if all three axes are only one voxel long, reduce the single voxel to the dest grid
 			// reduce and add it to the target grid if its mass is nonzero
-			psi_reduce(&curpoly, moments, 0, 0); /// TODO: higher order not turned on!!!!! 
+			psi_reduce(&curpoly, moments, vox->polyorder, 0);
 			if(moments[0] <= 0.0) continue;
 #if PSI_NDIM == 3
 			*gridind = grid->n.ijk[1]*grid->n.ijk[2]*curpoly.ibox[0].i + grid->n.ijk[2]*curpoly.ibox[0].j + curpoly.ibox[0].k;

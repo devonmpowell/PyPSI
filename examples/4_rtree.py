@@ -29,8 +29,8 @@ query_box = ( (10., 9., 8.), (10.3, 9.5, 8.2) )
 # query the tree
 # this returns an index for each queried element!
 qinds = rst.query(box=query_box)
-print ' - element indices =', qinds
+print(' - element indices =', qinds)
 
 # use fancy indexing to get the element connectivity back
-print ' - vertex ids =', mesh.connectivity[qinds]
-print ' - element coordinates =', mesh.pos[mesh.connectivity[qinds]]
+print(' - vertex ids =', mesh.connectivity[qinds])
+print(' - element coordinates =', mesh.pos[mesh.connectivity[qinds]])
