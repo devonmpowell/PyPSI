@@ -23,24 +23,24 @@ typedef struct {
 	int npart[6];
 	double mass[6];
 	double time;   // scale factor
-	double redshift;                    
-	int flag_sfr;                        
-	int flag_feedback;                   
-	unsigned int npartTotal[6];          
-	int flag_cooling;                    
-	int num_files;                       
-	double BoxSize;                      
-	double Omega0;                       
-	double OmegaLambda;                  
-	double HubbleParam;                  
-	int flag_stellarage;                 
-	int flag_metals;                     
+	double redshift;
+	int flag_sfr;
+	int flag_feedback;
+	unsigned int npartTotal[6];
+	int flag_cooling;
+	int num_files;
+	double BoxSize;
+	double Omega0;
+	double OmegaLambda;
+	double HubbleParam;
+	int flag_stellarage;
+	int flag_metals;
 	unsigned int npartTotalHighWord[6];
-	int  flag_entropy_instead_u;         
+	int  flag_entropy_instead_u;
 	char fill[52];
 	int max_level;
-	int base_level;	
-} gadget2header; 
+	int base_level;
+} gadget2header;
 
 int peek_gadget2(psi_mesh* mesh, const char* filename) {
 
@@ -50,16 +50,16 @@ int peek_gadget2(psi_mesh* mesh, const char* filename) {
 	if(!f) {
 		psi_printf("Failed to open %s.\n", filename);
 		return 0;
-	} 
-	
+	}
+
 	e = fread(&blksize, sizeof(int), 1, f);
 	e = fread(&header, sizeof(gadget2header), 1, f);
 	e = fread(&blksize, sizeof(int), 1, f);
-	mesh->npart = header.npart[1]; 
-	mesh->nelem = header.npart[1]; 
+	mesh->npart = header.npart[1];
+	mesh->nelem = header.npart[1];
 	mesh->periodic = 1;
 	mesh->elemtype = PSI_MESH_LINEAR;
-	mesh->dim = 3; 
+	mesh->dim = 3;
 	for(i = 0; i < 3; ++i) {
 		mesh->box[0].xyz[i] = 0.0;
 		mesh->box[1].xyz[i] = header.BoxSize;
@@ -79,18 +79,18 @@ int load_gadget2(psi_mesh* mesh, const char* filename) {
 	if(!f) {
 		psi_printf("Failed to open %s.\n", filename);
 		return 0;
-	} 
+	}
 	e = fread(&blksize, sizeof(int), 1, f);
 	e = fread(&header, sizeof(gadget2header), 1, f);
 	e = fread(&blksize, sizeof(int), 1, f);
 
 	// allocate mesh storage
-	mesh->npart = header.npart[1]; 
-	mesh->nelem = header.npart[1]; 
+	mesh->npart = header.npart[1];
+	mesh->nelem = header.npart[1];
 	load_mass = (header.mass[1] == 0);
 	mesh->periodic = 1;
 	mesh->elemtype = PSI_MESH_LINEAR;
-	mesh->dim = 3; 
+	mesh->dim = 3;
 	for(i = 0; i < 3; ++i) {
 		mesh->box[0].xyz[i] = 0.0;
 		mesh->box[1].xyz[i] = header.BoxSize;
@@ -103,31 +103,31 @@ int load_gadget2(psi_mesh* mesh, const char* filename) {
 	printf("Box = %f\n", header.BoxSize);
 	printf("load_mass = %d, mass = %f\n", load_mass, header.mass[1]);
 	printf("n_part = %d\n", mesh->npart);
-	
+
 	// read in position data
 	e = fread(&blksize, sizeof(int), 1, f);
 	psi_assert(blksize==3*mesh->npart*sizeof(float));
 	e = fread(tpos, 3*sizeof(float), mesh->npart, f);
 	e = fread(&blksize, sizeof(int), 1, f);
 	psi_assert(blksize==3*mesh->npart*sizeof(float));
-	
+
 	// read velocities
 	e = fread(&blksize, sizeof(int), 1, f);
 	psi_assert(blksize==3*mesh->npart*sizeof(float));
 	e = fread(tvel, 3*sizeof(float), mesh->npart, f);
 	e = fread(&blksize, sizeof(int), 1, f);
 	psi_assert(blksize==3*mesh->npart*sizeof(float));
-	
+
 	// read ids
 	e = fread(&blksize, sizeof(int), 1, f);
 	psi_assert(blksize==mesh->npart*sizeof(int));
 	e = fread(tid, sizeof(int), mesh->npart, f);
 	e = fread(&blksize, sizeof(int), 1, f);
 	psi_assert(blksize==mesh->npart*sizeof(int));
-	
+
 	// close the input file
 	fclose(f);
-	
+
 	// make arrays for vertices
 	// NOTE: assumes the arrays have been malloced!
 	for(p = 0; p < mesh->npart; ++p) {
@@ -146,31 +146,6 @@ int load_gadget2(psi_mesh* mesh, const char* filename) {
 	psi_free(tvel);
 	psi_free(tid);
 
-#if 1
-	nside = floor(pow(mesh->npart+0.5, ONE_THIRD));
-
-#define PPB 64
-	for(p = 0; p < mesh->npart; ++p) {
-
-		psi_int block = p/PPB;
-		psi_int bind = p%PPB;
-		psi_int bi = bind/16; 
-		psi_int bj = (bind - 16*bi)/4;
-		psi_int bk = (bind - 16*bi - 4*bj);
-
-		if(bi > 2 || bj > 2 || bk > 2)
-			continue;
-
-		for(ii = 0; ii < 2; ++ii)
-		for(jj = 0; jj < 2; ++jj)
-		for(kk = 0; kk < 2; ++kk) {
-			locind = 4*ii + 2*jj + kk;
-			vertind = block*PPB + 16*(bi+ii)+4*(bj+jj)+(bk+kk); 
-			mesh->connectivity[8*p+locind] = vertind;
-		}
-
-	}
-#else
 	// now build the mesh connectivity
 	// trilinear elements naturally
 	nside = floor(pow(mesh->npart+0.5, ONE_THIRD));
@@ -182,13 +157,11 @@ int load_gadget2(psi_mesh* mesh, const char* filename) {
 		for(jj = 0; jj < 2; ++jj)
 		for(kk = 0; kk < 2; ++kk) {
 			locind = 4*ii + 2*jj + kk;
-			vertind = nside*nside*((i+ii)%nside) 
+			vertind = nside*nside*((i+ii)%nside)
 				+ nside*((j+jj)%nside) + ((k+kk)%nside);
 			mesh->connectivity[8*elemind+locind] = vertind;
 		}
 	}
-#endif
-
 	psi_printf("...done.\n");
 	return 1;
 }
@@ -205,18 +178,18 @@ int load_gevolution(psi_mesh* mesh, const char* filename) {
 	if(!f) {
 		psi_printf("Failed to open %s.\n", filename);
 		return 0;
-	} 
+	}
 	e = fread(&blksize, sizeof(int), 1, f);
 	e = fread(&header, sizeof(gadget2header), 1, f);
 	e = fread(&blksize, sizeof(int), 1, f);
 
 	// allocate mesh storage
-	mesh->npart = header.npart[1]; 
-	mesh->nelem = header.npart[1]; 
+	mesh->npart = header.npart[1];
+	mesh->nelem = header.npart[1];
 	load_mass = (header.mass[1] == 0);
 	mesh->periodic = 1;
 	mesh->elemtype = PSI_MESH_LINEAR;
-	mesh->dim = 3; 
+	mesh->dim = 3;
 	for(i = 0; i < 3; ++i) {
 		mesh->box[0].xyz[i] = 0.0;
 		mesh->box[1].xyz[i] = header.BoxSize;
@@ -229,31 +202,31 @@ int load_gevolution(psi_mesh* mesh, const char* filename) {
 	printf("Box = %f\n", header.BoxSize);
 	printf("load_mass = %d, mass = %f\n", load_mass, header.mass[1]);
 	printf("n_part = %d\n", mesh->npart);
-	
+
 	// read in position data
 	e = fread(&blksize, sizeof(int), 1, f);
 	psi_assert(blksize==3*mesh->npart*sizeof(float));
 	e = fread(tpos, 3*sizeof(float), mesh->npart, f);
 	e = fread(&blksize, sizeof(int), 1, f);
 	psi_assert(blksize==3*mesh->npart*sizeof(float));
-	
+
 	// read velocities
 	e = fread(&blksize, sizeof(int), 1, f);
 	psi_assert(blksize==3*mesh->npart*sizeof(float));
 	e = fread(tvel, 3*sizeof(float), mesh->npart, f);
 	e = fread(&blksize, sizeof(int), 1, f);
 	psi_assert(blksize==3*mesh->npart*sizeof(float));
-	
+
 	// read particle ids
 	e = fread(&blksize, sizeof(int), 1, f);
 	psi_assert(blksize==mesh->npart*sizeof(long));
 	e = fread(tid, sizeof(long), mesh->npart, f);
 	e = fread(&blksize, sizeof(int), 1, f);
 	psi_assert(blksize==mesh->npart*sizeof(long));
-	
+
 	// close the input file
 	fclose(f);
-	
+
 	// make arrays for vertices
 	// NOTE: assumes the arrays have been malloced!
 	for(p = 0; p < mesh->npart; ++p) {
@@ -283,11 +256,53 @@ int load_gevolution(psi_mesh* mesh, const char* filename) {
 		for(jj = 0; jj < 2; ++jj)
 		for(kk = 0; kk < 2; ++kk) {
 			locind = 4*ii + 2*jj + kk;
-			vertind = nside*nside*((i+ii)%nside) 
+			vertind = nside*nside*((i+ii)%nside)
 				+ nside*((j+jj)%nside) + ((k+kk)%nside);
 			mesh->connectivity[8*elemind+locind] = vertind;
 		}
 	}
+#if 1
+	nside = floor(pow(mesh->npart+0.5, ONE_THIRD));
+
+#define PPB 64
+	for(p = 0; p < mesh->npart; ++p) {
+
+		psi_int block = p/PPB;
+		psi_int bind = p%PPB;
+		psi_int bi = bind/16;
+		psi_int bj = (bind - 16*bi)/4;
+		psi_int bk = (bind - 16*bi - 4*bj);
+
+		if(bi > 2 || bj > 2 || bk > 2)
+			continue;
+
+		for(ii = 0; ii < 2; ++ii)
+		for(jj = 0; jj < 2; ++jj)
+		for(kk = 0; kk < 2; ++kk) {
+			locind = 4*ii + 2*jj + kk;
+			vertind = block*PPB + 16*(bi+ii)+4*(bj+jj)+(bk+kk);
+			mesh->connectivity[8*p+locind] = vertind;
+		}
+
+	}
+#else
+	// now build the mesh connectivity
+	// trilinear elements naturally
+	nside = floor(pow(mesh->npart+0.5, ONE_THIRD));
+	for(i = 0; i < nside; ++i)
+	for(j = 0; j < nside; ++j)
+	for(k = 0; k < nside; ++k) {
+		elemind = nside*nside*i + nside*j + k;
+		for(ii = 0; ii < 2; ++ii)
+		for(jj = 0; jj < 2; ++jj)
+		for(kk = 0; kk < 2; ++kk) {
+			locind = 4*ii + 2*jj + kk;
+			vertind = nside*nside*((i+ii)%nside)
+				+ nside*((j+jj)%nside) + ((k+kk)%nside);
+			mesh->connectivity[8*elemind+locind] = vertind;
+		}
+	}
+#endif
 
 	psi_printf("...done.\n");
 	return 1;
