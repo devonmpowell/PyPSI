@@ -1299,16 +1299,17 @@ static PyObject *PSI_powerSpectrum(PyObject *self, PyObject *args, PyObject* kwd
 #endif
 
 #if PY_MAJOR_VERSION >= 3
-    static struct PyModuleDef PSI = {
-        PyModuleDef_HEAD_INIT,
-        "PSI",     /* m_name */
-        "PSI, the phase space intersector",  /* m_doc */
-        -1,                  /* m_size */
-        module_methods    /* m_methods */
-    };
-#endif
-
-
+static PyMethodDef module_methods[] = {
+    {"skymap", (PyCFunction)PSI_skymap, METH_KEYWORDS | METH_VARARGS, "Makes a skymap"},
+    {"beamtrace", (PyCFunction)PSI_beamtrace, METH_KEYWORDS | METH_VARARGS, "beamtrace"},
+    {"voxels", (PyCFunction)PSI_voxels, METH_KEYWORDS | METH_VARARGS, "Voxelizes"},
+    {"phi", (PyCFunction)PSI_phi, METH_KEYWORDS | METH_VARARGS, "phi"},
+    {"VDF", (PyCFunction)PSI_VDF, METH_KEYWORDS | METH_VARARGS, "VDF"},
+    {"crossStreams", (PyCFunction)PSI_crossStreams, METH_KEYWORDS | METH_VARARGS, "crossStreams"},
+    {"powerSpectrum", (PyCFunction)PSI_powerSpectrum, METH_KEYWORDS | METH_VARARGS, "powerSpectrum"},
+    {NULL, NULL, 0, NULL}
+};
+#else
 static PyMethodDef module_methods[] = {
    	{"skymap", (PyCFunction)PSI_skymap, METH_KEYWORDS, "Makes a skymap"},
    	{"beamtrace", (PyCFunction)PSI_beamtrace, METH_KEYWORDS, "beamtrace"},
@@ -1319,6 +1320,18 @@ static PyMethodDef module_methods[] = {
    	{"powerSpectrum", (PyCFunction)PSI_powerSpectrum, METH_KEYWORDS, "powerSpectrum"},
     {NULL, NULL, 0, NULL}
 };
+#endif
+
+#if PY_MAJOR_VERSION >= 3
+    static struct PyModuleDef PSI = {
+        PyModuleDef_HEAD_INIT,
+        "PSI",     /* m_name */
+        "PSI, the phase space intersector",  /* m_doc */
+        -1,                  /* m_size */
+        module_methods    /* m_methods */
+    };
+#endif
+
 
 PyMODINIT_FUNC initPSI(void) {
     PyObject* m;
