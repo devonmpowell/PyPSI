@@ -13,6 +13,12 @@
 #include "fft.h"
 #endif
 
+#if PY_MAJOR_VERSION >= 3
+#define PyInt_AsLong(x) (PyLong_AsLong((x)))
+#define PyString_Check(x) (PyBytes_Check((x)))
+#define PyInt_AS_LONG(x) (PyLong_AsLong((x)))
+#define PyString_AsString(x) (PyUnicode_AsUTF8((x)))
+#endif
 
 /////////////////////////////////////////////////////////////
 //   Define Python type structs and conversion functions up front 
@@ -1292,6 +1298,17 @@ static PyObject *PSI_powerSpectrum(PyObject *self, PyObject *args, PyObject* kwd
 #define PyMODINIT_FUNC void
 #endif
 
+#if PY_MAJOR_VERSION >= 3
+    static struct PyModuleDef PSI = {
+        PyModuleDef_HEAD_INIT,
+        "PSI",     /* m_name */
+        "PSI, the phase space intersector",  /* m_doc */
+        -1,                  /* m_size */
+        module_methods    /* m_methods */
+    };
+#endif
+
+
 static PyMethodDef module_methods[] = {
    	{"skymap", (PyCFunction)PSI_skymap, METH_KEYWORDS, "Makes a skymap"},
    	{"beamtrace", (PyCFunction)PSI_beamtrace, METH_KEYWORDS, "beamtrace"},
@@ -1305,8 +1322,12 @@ static PyMethodDef module_methods[] = {
 
 PyMODINIT_FUNC initPSI(void) {
     PyObject* m;
+#if PY_MAJOR_VERSION >= 3
+    m = PyModule_Create(&PSI);
+#else
     m = Py_InitModule3("PSI", module_methods,
-	       "PSI, the phase space intersector");
+          "PSI, the phase space intersector");
+#endif
     if(!m) return;
 
 	// import numpy functionality
@@ -1335,6 +1356,9 @@ PyMODINIT_FUNC initPSI(void) {
 	PyModule_AddObject(m, "Metric", (PyObject*)&MetricType);
 #endif
 
+#if PY_MAJOR_VERSION >= 3
+	return m;
+#endif
 
 	// TODO: add macroed constants to the Python module 
 }
