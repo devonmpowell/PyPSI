@@ -39,5 +39,7 @@ For now, use as you wish for non-commercial purposes with proper attribution.
 ### Developers:
 
 Devon Powell (Stanford, MPA Garching)
+
 Tom Abel (Stanford, SLAC)
+
 Goran Jelic-Cizmek (University of Geneva)
