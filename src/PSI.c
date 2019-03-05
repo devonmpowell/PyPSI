@@ -321,9 +321,15 @@ static int Mesh_init(Mesh *self, PyObject *args, PyObject *kwds) {
 		}
 
 	}
-	else if(strcmp(cloader, "gadget2") == 0) {
+	else if(strcmp(cloader, "gadget2") == 0 || 
+			strcmp(cloader, "gevolution") == 0) {
 
-		psi_printf("Using the Gadget2 loader.\n");
+		if(strcmp(cloader, "gadget2") == 0) {
+			psi_printf("Using the Gadget2 loader.\n");
+		} 
+		else if(strcmp(cloader, "gevolution") == 0) {
+			psi_printf("Using the Gevolution loader.\n");
+		} 
 
 		// peek at the file first to make sure it's there
 		// and to get header information
@@ -358,8 +364,14 @@ static int Mesh_init(Mesh *self, PyObject *args, PyObject *kwds) {
 		cmesh.connectivity = PyArray_DATA((PyArrayObject*)self->connectivity);
 
 		// load the data into the numpy buffers
-		if(!load_gadget2(&cmesh, cfile))
-			return -1;
+		if(strcmp(cloader, "gadget2") == 0) {
+			if(!load_gadget2(&cmesh, cfile))
+				return -1;
+		} 
+		else if(strcmp(cloader, "gevolution") == 0) {
+			if(!load_gevolution(&cmesh, cfile))
+				return -1;
+		} 
 
 	}
 	else {
