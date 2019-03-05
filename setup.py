@@ -1,10 +1,14 @@
+# for python 2.x compatibility
+from __future__ import print_function
+if hasattr(__builtins__, 'raw_input'):
+    input = raw_input
 from setuptools import setup, Extension
 import numpy as np
 import sys
 import os
 
 
-# default build behavior 
+# default build behavior
 srcfiles = ["src/PSI.c", "src/mesh.c","src/grid.c", "src/geometry.c", "src/skymap.c",
         "src/cpsi.c", "src/refine.c", "src/rtree.c", "src/beamtrace.c",]
 libs = []
@@ -12,7 +16,7 @@ libdirs = []
 macros = [('PYMODULE', None), ('NPY_NO_DEPRECATED_API', 'NPY_1_7_API_VERSION'),]
 
 
-# determine the FFTW directories 
+# determine the FFTW directories
 #fftw_home = "/usr/local/fftw3"
 fftw_home = "/usr/local"
 #fftw_home = "/scratch/users/dmpowel1/fftw-3.3.4"
@@ -21,7 +25,7 @@ user_input = input()
 if not user_input.strip():
     user_input = fftw_home
 if os.path.isfile(user_input+"/lib/libfftw3.a"):
-    # if the fftw directory is good, add the path 
+    # if the fftw directory is good, add the path
     fftw_home = user_input
     libs.append("fftw3")
     libdirs.append(fftw_home+"/lib")
@@ -38,11 +42,11 @@ else:
         sys.exit(0)
 
 
-# define the C extension build 
+# define the C extension build
 c_ext = Extension(
-    name = "PSI", 
+    name = "PSI",
     sources = srcfiles,
-    define_macros = macros, 
+    define_macros = macros,
     library_dirs = libdirs,
     libraries = libs,
 )
