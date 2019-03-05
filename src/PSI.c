@@ -15,7 +15,7 @@
 
 #if PY_MAJOR_VERSION >= 3
 #define PyInt_AsLong(x) (PyLong_AsLong((x)))
-#define PyString_Check(x) (PyBytes_Check((x)))
+#define PyString_Check(x) (PyUnicode_Check((x)))
 #define PyInt_AS_LONG(x) (PyLong_AsLong((x)))
 #define PyString_AsString(x) (PyUnicode_AsUTF8((x)))
 #define PyInt_Check(x) (PyLong_Check((x)))
