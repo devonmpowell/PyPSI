@@ -39,7 +39,10 @@ void psi_do_power_spectrum(psi_grid* grid, psi_real* P, psi_real* kk, psi_real d
 		halfn.ijk[ax] = dims.ijk[ax]/2 + 1;
 		L.xyz[ax] = grid->window[1].xyz[ax]-grid->window[0].xyz[ax];
 	}
-	
+
+	psi_int *cellcount = (psi_int*) psi_malloc(nbins*sizeof(psi_int));
+	memset(cellcount, 0, nbins*sizeof(psi_int));
+
 	// do the FFT and bin the power
 	rhok = (fftw_complex*) fftw_malloc(dims.i*dims.j*halfn.k*sizeof(fftw_complex));
 	p = fftw_plan_dft_r2c_3d(dims.i, dims.j, dims.k, grid->fields[0], rhok, FFTW_ESTIMATE);
@@ -61,6 +64,7 @@ void psi_do_power_spectrum(psi_grid* grid, psi_real* P, psi_real* kk, psi_real d
 			zre = rhok[dims.j*halfn.k*i + halfn.k*j + k][0]; 
 			zim = rhok[dims.j*halfn.k*i + halfn.k*j + k][1]; 
 			P[ll] += zre*zre + zim*zim; 
+			++cellcount[ll];
 		}
 	}
 	fftw_free(rhok);
@@ -72,9 +76,14 @@ void psi_do_power_spectrum(psi_grid* grid, psi_real* P, psi_real* kk, psi_real d
 	for(ll = 0; ll < nbins; ++ll) {
 		kk[ll] = dk*(ll+0.5);
 		P[ll] *= 2.0/(dims.i*dims.j*dims.k);
+
+		P[ll] /= cellcount[ll]; 
+
 		//kvol = (FOUR_PI*dk*dk*dk/3.0)*(1+3*ll+3*ll*ll);
 		//P[ll] *= 1.0/kvol; 
 	}
+
+	free(cellcount);
 	
 }
 
