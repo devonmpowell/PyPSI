@@ -341,17 +341,19 @@ void psi_skymap(psi_grid* grid, psi_mesh* mesh, psi_int bstep, psi_int mode) {
 			psi_printf("\rPixel %d of %d, %.1f%%", p, grid->n.k, (100.0*p)/grid->n.k);
 	}
 
-	psi_rtree_destroy(&rtree);
+	psi_printf("\rPixel %d of %d, %.1f%%", p, grid->n.k, (100.0*p)/grid->n.k);
+	psi_printf("\n");
 
-	printf("Total mass mapped = %.5e\n", mtot);
-	printf("Omtot/4pi-1 = %.5e\n", omtot/(FOUR_PI)-1.0);
-	printf("Num. failed queries = %d\n", nfail);
+	psi_printf("Total mass mapped = %.5e\n", mtot);
+	psi_printf("Omtot/4pi-1 = %.5e\n", omtot/(FOUR_PI)-1.0);
+	psi_printf("Num. failed queries = %d\n", nfail);
 
 	// make sure all elements were used...
 	//for(e = 0; e < mesh->nelem; ++e) {
 		//if(elemmarks[e]) continue;
 		//printf(" Element %d was never used !!!---!!!\n", e);
 	//}
+	psi_rtree_destroy(&rtree);
 	psi_free(elemmarks);
 
 	// if we are in healpix, solve for the correction factors

@@ -25,62 +25,103 @@ inline psi_real laplace(psi_rvec k, psi_rvec d) {
 
 
 
-void psi_do_power_spectrum(psi_grid* grid, psi_real* P, psi_real* kk, psi_real dk, psi_int nbins) {
+void psi_do_power_spectrum(psi_grid* grid, psi_real* P, psi_real* kk, psi_real dkbin, psi_int nbins) {
 
 	fftw_plan p;
 	fftw_complex* rhok;
-	psi_int ax, i, j, k, ll;
+	psi_int ax, i, j, k, ll, n3;
 	psi_dvec halfn, dims;
-	psi_rvec kvec, L;
-	psi_real ksc, zre, zim, kvol, kvolfac;
+	psi_rvec kvec, L, dk;
+	psi_real ksc, zre, zim, kvol, dk3;
+	double rho0, pow_cell;
+	double *delta;
 
 	for(ax = 0; ax < 3; ++ax) {
 		dims.ijk[ax] = grid->n.ijk[ax];
 		halfn.ijk[ax] = dims.ijk[ax]/2 + 1;
 		L.xyz[ax] = grid->window[1].xyz[ax]-grid->window[0].xyz[ax];
+		dk.xyz[ax] = TWO_PI/L.xyz[ax];
+	}
+	n3 = dims.i*dims.j*dims.k;
+	dk3 = dk.x*dk.y*dk.z;
+
+
+	// Compute delta from the density 
+	delta = (double*) malloc(n3*sizeof(double));
+	rho0 = 0.0;
+	for(i = 0; i < n3; ++i) {
+		delta[i] = grid->fields[PSI_GRID_M][i];
+		rho0 += delta[i];
+	}
+	rho0 /= n3; 
+	double pow_x = 0.0;
+	for(i = 0; i < n3; ++i) {
+		delta[i] = (delta[i]/rho0 - 1.0); 
+		pow_x += delta[i]*delta[i];
 	}
 
-	psi_int *cellcount = (psi_int*) psi_malloc(nbins*sizeof(psi_int));
-	memset(cellcount, 0, nbins*sizeof(psi_int));
+	printf("rho0 = %.5e\n", rho0);
+	printf("Total power(x) = %.5e\n", pow_x);
 
 	// do the FFT and bin the power
 	rhok = (fftw_complex*) fftw_malloc(dims.i*dims.j*halfn.k*sizeof(fftw_complex));
-	p = fftw_plan_dft_r2c_3d(dims.i, dims.j, dims.k, grid->fields[0], rhok, FFTW_ESTIMATE);
+	p = fftw_plan_dft_r2c_3d(dims.i, dims.j, dims.k, delta, rhok, FFTW_ESTIMATE);
 	fftw_execute(p);
 	fftw_destroy_plan(p);
+
+	double pow_k = 0.0;
+
+	// Bin the power
+	psi_int *cellcount = (psi_int*) psi_malloc(nbins*sizeof(psi_int));
+	memset(cellcount, 0, nbins*sizeof(psi_int));
 	for(i = 0; i < dims.i; ++i) 
 	for(j = 0; j < dims.j; ++j) 
 	for(k = 0; k < halfn.k; ++k) {
 
+		// skip the zero mode
+		if(i == 0 && j == 0 && k == 0)
+			continue;
+
 		// compute wavenumbers (arbitrary units)	
-		kvec.x = TWO_PI/L.x * ((i < halfn.i)? i : (i - dims.i));
-		kvec.y = TWO_PI/L.y * ((j < halfn.j)? j : (j - dims.j));
-		kvec.z = TWO_PI/L.z * k;
+		kvec.x = dk.x * ((i < halfn.i)? i : (i - dims.i));
+		kvec.y = dk.y * ((j < halfn.j)? j : (j - dims.j));
+		kvec.z = dk.z * k;
 		ksc = sqrt(kvec.x*kvec.x + kvec.y*kvec.y + kvec.z*kvec.z);
-		
+
+		// get the power for this cell
+		zre = rhok[dims.j*halfn.k*i + halfn.k*j + k][0]; 
+		zim = rhok[dims.j*halfn.k*i + halfn.k*j + k][1]; 
+		pow_cell = zre*zre + zim*zim;
+
+		//if(k < halfn.k-1)
+		if(k > 0)
+			pow_k += 2*pow_cell; 
+		else
+			pow_k += pow_cell; 
+
+
+
 		// get the index and bin the power
-		ll = floor(ksc/dk);
+		ll = floor(ksc/dkbin);
 		if(ll < nbins) {
-			zre = rhok[dims.j*halfn.k*i + halfn.k*j + k][0]; 
-			zim = rhok[dims.j*halfn.k*i + halfn.k*j + k][1]; 
-			P[ll] += zre*zre + zim*zim; 
-			++cellcount[ll];
+			P[ll] += pow_cell; 
+			cellcount[ll] += 1;
 		}
 	}
 	fftw_free(rhok);
+	free(delta);
 
-	// normalize
-	// the factor of 2 is for the real FFT,
-	// we have only counted the +- mode pairs once
-	//kvolfac = 
+	pow_k /= n3;
+	printf("Total power(k) = %.5e, div n3 = %.5e\n", pow_k, pow_k/n3);
+	printf("dk3 = %.5e\n", dk3);
+
+	// Put P in the correct units
+	// Compute bin centers
 	for(ll = 0; ll < nbins; ++ll) {
-		kk[ll] = dk*(ll+0.5);
-		P[ll] *= 2.0/(dims.i*dims.j*dims.k);
 
-		P[ll] /= cellcount[ll]; 
+		P[ll] *= 1.0/(n3*cellcount[ll]); 
 
-		//kvol = (FOUR_PI*dk*dk*dk/3.0)*(1+3*ll+3*ll*ll);
-		//P[ll] *= 1.0/kvol; 
+		kk[ll] = dkbin*(ll+0.5);
 	}
 
 	free(cellcount);
@@ -106,7 +147,7 @@ void psi_do_phi(psi_grid* grid, psi_real* phi_out, psi_real Gn) {
 	}
 	
 	rhok = (fftw_complex*) fftw_malloc(dims.i*dims.j*halfn.k*sizeof(fftw_complex));
-	p = fftw_plan_dft_r2c_3d(dims.i, dims.j, dims.k, grid->fields[0], rhok, FFTW_ESTIMATE);
+	p = fftw_plan_dft_r2c_3d(dims.i, dims.j, dims.k, grid->fields[PSI_GRID_M], rhok, FFTW_ESTIMATE);
 	fftw_execute(p);
 	fftw_destroy_plan(p);
 

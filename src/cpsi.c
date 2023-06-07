@@ -146,6 +146,7 @@ void psi_voxels(psi_grid* grid, psi_mesh* mesh, psi_rtree* rtree, psi_int mode, 
 			return;
 #endif
 	}
+	psi_printf("\rElement %d of %d, %.1f%%", e, mesh->nelem, (100.0*e)/mesh->nelem);
 	psi_printf("\n");
 
 	// free temporary buffers
