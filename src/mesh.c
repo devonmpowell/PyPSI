@@ -2,17 +2,7 @@
 
 
 
-
-
-int psi_verts_per_elem(psi_int elemtype) {
-	//const static psi_int vpere[3] = {4, 8, 27};
-	return elemtype;
-}
-
-
-
 void psi_mesh_destroy(psi_mesh* mesh) {
-
 	psi_free(mesh->pos);
 	psi_free(mesh->vel);
 	psi_free(mesh->mass);

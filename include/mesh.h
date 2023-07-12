@@ -24,10 +24,7 @@ typedef struct {
 	psi_int periodic;
 } psi_mesh;
 
-
-int psi_verts_per_elem(psi_int elemtype);
 void psi_mesh_destroy(psi_mesh* mesh);
-
 
 // mesh loaders (more to be added)
 

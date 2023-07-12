@@ -37,6 +37,7 @@
 #define psi_assert(x) { \
 	if(!(x)) { \
 		psi_printf("Assert failed! %s, line %d.\n", __FILE__, __LINE__); \
+		return 0; \
 	} \
 }
 

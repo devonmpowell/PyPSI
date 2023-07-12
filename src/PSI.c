@@ -99,7 +99,7 @@ static int Grid_init(Grid *self, PyObject *args, PyObject *kwds) {
 		}
 
 		// always do m
-		arr = PyArray_ZEROS(dim, npdims, NPY_DOUBLE, 0);
+		arr = PyArray_ZEROS(dim, npdims, NPY_FLOAT64, 0);
 		if(!arr) return -1;
 		self->cgrid.fields[PSI_GRID_M] = (psi_real*)PyArray_DATA((PyArrayObject*)arr);
 		if(PyDict_SetItemString(self->fields, "m", arr) < 0) 
@@ -117,7 +117,7 @@ static int Grid_init(Grid *self, PyObject *args, PyObject *kwds) {
 					else if(strcmp(cstring, "x") == 0) {
 						npdims[3] = 3; 
 						dim = 4;
-						arr = PyArray_ZEROS(dim, npdims, NPY_DOUBLE, 0);
+						arr = PyArray_ZEROS(dim, npdims, NPY_FLOAT64, 0);
 						if(!arr) return -1;
 						self->cgrid.fields[PSI_GRID_X] = (psi_real*)PyArray_DATA((PyArrayObject*)arr);
 						if(PyDict_SetItemString(self->fields, "x", arr) < 0) 
@@ -126,7 +126,7 @@ static int Grid_init(Grid *self, PyObject *args, PyObject *kwds) {
 					else if(strcmp(cstring, "v") == 0) {
 						npdims[3] = 3; 
 						dim = 4;
-						arr = PyArray_ZEROS(dim, npdims, NPY_DOUBLE, 0);
+						arr = PyArray_ZEROS(dim, npdims, NPY_FLOAT64, 0);
 						if(!arr) return -1;
 						self->cgrid.fields[PSI_GRID_V] = (psi_real*)PyArray_DATA((PyArrayObject*)arr);
 						if(PyDict_SetItemString(self->fields, "v", arr) < 0) 
@@ -136,7 +136,7 @@ static int Grid_init(Grid *self, PyObject *args, PyObject *kwds) {
 						npdims[3] = 3;
 						npdims[4] = 3; 
 						dim = 5;
-						arr = PyArray_ZEROS(dim, npdims, NPY_DOUBLE, 0);
+						arr = PyArray_ZEROS(dim, npdims, NPY_FLOAT64, 0);
 						if(!arr) return -1;
 						self->cgrid.fields[PSI_GRID_XX] = (psi_real*)PyArray_DATA((PyArrayObject*)arr);
 						if(PyDict_SetItemString(self->fields, "xx", arr) < 0) 
@@ -146,7 +146,7 @@ static int Grid_init(Grid *self, PyObject *args, PyObject *kwds) {
 						npdims[3] = 3; 
 						npdims[4] = 3; 
 						dim = 5;
-						arr = PyArray_ZEROS(dim, npdims, NPY_DOUBLE, 0);
+						arr = PyArray_ZEROS(dim, npdims, NPY_FLOAT64, 0);
 						if(!arr) return -1;
 						self->cgrid.fields[PSI_GRID_XV] = (psi_real*)PyArray_DATA((PyArrayObject*)arr);
 						if(PyDict_SetItemString(self->fields, "xv", arr) < 0) 
@@ -156,7 +156,7 @@ static int Grid_init(Grid *self, PyObject *args, PyObject *kwds) {
 						npdims[3] = 3; 
 						npdims[4] = 3; 
 						dim = 5;
-						arr = PyArray_ZEROS(dim, npdims, NPY_DOUBLE, 0);
+						arr = PyArray_ZEROS(dim, npdims, NPY_FLOAT64, 0);
 						if(!arr) return -1;
 						self->cgrid.fields[PSI_GRID_VV] = (psi_real*)PyArray_DATA((PyArrayObject*)arr);
 						if(PyDict_SetItemString(self->fields, "vv", arr) < 0) 
@@ -210,7 +210,7 @@ static int Grid_init(Grid *self, PyObject *args, PyObject *kwds) {
 
 		// make the fields dict
 		// now allocate numpy storage
-		PyDict_SetItemString(self->fields, "m", PyArray_ZEROS(dim, npdims, NPY_DOUBLE, 0));
+		PyDict_SetItemString(self->fields, "m", PyArray_ZEROS(dim, npdims, NPY_FLOAT64, 0));
 
 #endif
 	
@@ -344,7 +344,7 @@ typedef struct {
 
 static int Mesh_init(Mesh *self, PyObject *args, PyObject *kwds) {
 
-	psi_int ax, ndim;
+	psi_int ax, ndim, i;
 	psi_dvec nside;
 	char* cloader, *cfile;
 	npy_intp npdims[6];
@@ -377,54 +377,125 @@ static int Mesh_init(Mesh *self, PyObject *args, PyObject *kwds) {
 	// fill in all grid information as Python tuples
 	if(strcmp(cloader, "array") == 0) {
 
-		// TODO: check dtypes and shapes!!!
-		if(!PyArray_Check(posar))
+		if(PyArray_Check(posar)) {
+
+			// get the dimensionality based on shape of pos 
+			if(PyArray_TYPE(posar) != NPY_FLOAT64) {
+				PyErr_SetString(PyExc_TypeError, "pos must be an array of doubles");
+				return -1;
+			}
+			ndim = PyArray_NDIM((PyArrayObject*)posar);
+			dtmp = PyArray_DIMS((PyArrayObject*)posar);
+			if(ndim != 2 || dtmp[1] != 3) {
+				PyErr_SetString(PyExc_TypeError, "pos must be a 2D array with shape (npart, 3)");
+				return -1;
+			}
+			self->cmesh.dim = dtmp[1];
+			self->cmesh.npart = dtmp[0];
+			tmp = self->pos;
+			self->pos = posar;
+			Py_INCREF(posar);
+			Py_DECREF(tmp);
+			self->cmesh.pos = (psi_rvec*)PyArray_DATA((PyArrayObject*)self->pos);
+		}
+		else {
+			PyErr_SetString(PyExc_TypeError, "pos must be a numpy array");
 			return -1;
-		if(!PyArray_Check(velar))
+		}
+		if(PyArray_Check(connar)) {
+
+			// elemtype based on shape of connectivity 
+			if(PyArray_TYPE(connar) != NPY_INT32) {
+				PyErr_SetString(PyExc_TypeError, "connectivity must be an array of ints");
+				return -1;
+			}
+			ndim = PyArray_NDIM((PyArrayObject*)connar);
+			dtmp = PyArray_DIMS((PyArrayObject*)connar);
+			if(ndim != 2) {
+				PyErr_SetString(PyExc_TypeError, "connectivity must be a 2D array with shape (nelem, nverts_per_elem)");
+				return -1;
+			}
+			if(dtmp[1] != PSI_MESH_SIMPLEX && dtmp[1] != PSI_MESH_LINEAR && dtmp[1] != PSI_MESH_QUADRATIC) {
+				PyErr_SetString(PyExc_TypeError, "connectivity must be a 2D array where nverts_per_elem is 4, 8, or 27.");
+				return -1;
+			}
+			self->cmesh.elemtype = dtmp[1];
+			self->cmesh.nelem = dtmp[0];
+			tmp = self->connectivity;
+			self->connectivity = connar;
+			Py_INCREF(connar);
+			Py_DECREF(tmp);
+			self->cmesh.connectivity = (psi_int*)PyArray_DATA((PyArrayObject*)self->connectivity);
+		}
+		else {
+			PyErr_SetString(PyExc_TypeError, "connectivity must be a numpy array");
 			return -1;
-		if(!PyArray_Check(massar))
+		}
+
+		// mass and velocity are not required, they will created if not provided 
+		if(velar == NULL) {
+			npdims[0] = self->cmesh.npart;
+			npdims[1] = self->cmesh.dim;
+			self->vel = PyArray_SimpleNew(2, npdims, NPY_FLOAT64);
+			if(!self->vel) return -1;
+			self->cmesh.vel = (psi_real*)PyArray_DATA((PyArrayObject*)self->vel);
+			for(i = 0; i < self->cmesh.npart; ++i) {
+				self->cmesh.vel[i].x = 0.0;
+				self->cmesh.vel[i].y = 0.0;
+				self->cmesh.vel[i].z = 0.0;
+			}
+		}
+		else if(PyArray_Check(velar)) {
+			if(PyArray_TYPE(velar) != NPY_FLOAT64) {
+				PyErr_SetString(PyExc_TypeError, "if provided, vel must be an array of doubles");
+				return -1;
+			}
+			ndim = PyArray_NDIM((PyArrayObject*)velar);
+			dtmp = PyArray_DIMS((PyArrayObject*)velar);
+			if(ndim != 2 || dtmp[1] != self->cmesh.dim || dtmp[0] != self->cmesh.npart) {
+				PyErr_SetString(PyExc_TypeError, "if provided, vel must have the same shape as pos");
+				return -1;
+			}
+			tmp = self->vel;
+			self->vel = velar;
+			Py_INCREF(velar);
+			Py_DECREF(tmp);
+			self->cmesh.vel = (psi_rvec*)PyArray_DATA((PyArrayObject*)self->vel);
+		}
+		else {
+			PyErr_SetString(PyExc_TypeError, "if provided, vel must be a numpy array");
 			return -1;
-		if(!PyArray_Check(connar))
+		}
+
+		if(massar == NULL) {
+			npdims[0] = self->cmesh.nelem;
+			self->mass = PyArray_SimpleNew(1, npdims, NPY_FLOAT64);
+			if(!self->mass) return -1;
+			self->cmesh.mass = (psi_real*)PyArray_DATA((PyArrayObject*)self->mass);
+			for(i = 0; i < self->cmesh.nelem; ++i)
+				self->cmesh.mass[i] = 1.0;
+		}
+		else if(PyArray_Check(massar)) {
+			if(PyArray_TYPE(massar) != NPY_FLOAT64) {
+				PyErr_SetString(PyExc_TypeError, "if provided, mass must be an array of doubles");
+				return -1;
+			}
+			ndim = PyArray_NDIM((PyArrayObject*)massar);
+			dtmp = PyArray_DIMS((PyArrayObject*)massar);
+			if(ndim != 1 || dtmp[0] != self->cmesh.nelem) {
+				PyErr_SetString(PyExc_TypeError, "if provided, mass must be a 1D array of length nelem");
+				return -1;
+			}
+			tmp = self->mass;
+			self->mass = massar;
+			Py_INCREF(massar);
+			Py_DECREF(tmp);
+			self->cmesh.mass = (psi_real*)PyArray_DATA((PyArrayObject*)self->mass);
+		}
+		else {
+			PyErr_SetString(PyExc_TypeError, "if provided, mass must be a numpy array");
 			return -1;
-
-		tmp = self->pos;
-		self->pos = posar;
-		Py_INCREF(posar);
-		Py_DECREF(tmp);
-		self->cmesh.pos = (psi_rvec*)PyArray_DATA((PyArrayObject*)self->pos);
- 
-		// get the dimensionality based on shape of pos 
-		// elemtype based on shape of connectivity 
-		// TODO: check array shape
-		ndim = PyArray_NDIM((PyArrayObject*)self->pos);
-		dtmp = PyArray_DIMS((PyArrayObject*)self->pos);
-		self->cmesh.dim = dtmp[1];
-		self->cmesh.npart = dtmp[0];
-
-		tmp = self->vel;
-		self->vel = velar;
-		Py_INCREF(velar);
-		Py_DECREF(tmp);
-		self->cmesh.vel = (psi_rvec*)PyArray_DATA((PyArrayObject*)self->vel);
-
-		tmp = self->mass;
-		self->mass = massar;
-		Py_INCREF(massar);
-		Py_DECREF(tmp);
-		self->cmesh.mass = (psi_real*)PyArray_DATA((PyArrayObject*)self->mass);
-
-		tmp = self->connectivity;
-		self->connectivity = connar;
-		Py_INCREF(connar);
-		Py_DECREF(tmp);
-		self->cmesh.connectivity = (psi_int*)PyArray_DATA((PyArrayObject*)self->connectivity);
-
-		ndim = PyArray_NDIM((PyArrayObject*)self->connectivity);
-		dtmp = PyArray_DIMS((PyArrayObject*)self->connectivity);
-		self->cmesh.elemtype = dtmp[1];
-		self->cmesh.nelem = dtmp[0];
-
-
+		}
 	}
 	else if(strcmp(cloader, "block") == 0) {
 
@@ -454,19 +525,17 @@ static int Mesh_init(Mesh *self, PyObject *args, PyObject *kwds) {
 		Py_INCREF(posar);
 
 		// TODO: set better error handling here
-		self->vel = PyArray_SimpleNew(ndim, dtmp, NPY_DOUBLE);
-		self->mass = PyArray_SimpleNew(ndim-1, dtmp, NPY_DOUBLE);
+		self->vel = PyArray_SimpleNew(ndim, dtmp, NPY_FLOAT64);
+		self->mass = PyArray_SimpleNew(ndim-1, dtmp, NPY_FLOAT64);
 
 		npdims[0] = nside.i*nside.j*nside.k;
 		if(npdims[0] != dtmp[0]) {
 			psi_printf("Number of particles does not match block dimensions!\n");
 			return -1;
 		}
-		npdims[1] = psi_verts_per_elem(PSI_MESH_LINEAR); 
+		npdims[1] = PSI_MESH_LINEAR; 
 		self->connectivity = PyArray_SimpleNew(2, npdims, NPY_INT32);
 		psi_int* cptr = (psi_int*) PyArray_DATA((PyArrayObject*)self->connectivity); 
-
-		psi_printf("Using the array loader.\n");
 
 		// now build the mesh connectivity
 		// trilinear elements naturally
@@ -507,17 +576,16 @@ static int Mesh_init(Mesh *self, PyObject *args, PyObject *kwds) {
 		// wrap the self->cmesh data in a cubical Numpy array
 		npdims[0] = self->cmesh.npart;
 		npdims[1] = self->cmesh.dim;
-		self->pos = PyArray_SimpleNew(2, npdims, NPY_DOUBLE);
-		self->vel = PyArray_SimpleNew(2, npdims, NPY_DOUBLE);
-		self->mass = PyArray_SimpleNew(1, npdims, NPY_DOUBLE);
+		self->pos = PyArray_SimpleNew(2, npdims, NPY_FLOAT64);
+		if(!self->pos) return -1;
+		self->vel = PyArray_SimpleNew(2, npdims, NPY_FLOAT64);
+		if(!self->vel) return -1;
+		self->mass = PyArray_SimpleNew(1, npdims, NPY_FLOAT64);
+		if(!self->mass) return -1;
 		npdims[0] = self->cmesh.nelem;
-		npdims[1] = psi_verts_per_elem(self->cmesh.elemtype); 
+		npdims[1] = self->cmesh.elemtype; 
 		self->connectivity = PyArray_SimpleNew(2, npdims, NPY_INT32);
-		if(!self->pos || !self->vel || !self->connectivity) {
-			psi_printf("new array fail!\n");
-			return -1;
-		} 
-
+		if(!self->connectivity) return -1;
 		self->cmesh.pos = PyArray_DATA((PyArrayObject*)self->pos);
 		self->cmesh.vel = PyArray_DATA((PyArrayObject*)self->vel);
 		self->cmesh.mass = PyArray_DATA((PyArrayObject*)self->mass);
@@ -525,14 +593,17 @@ static int Mesh_init(Mesh *self, PyObject *args, PyObject *kwds) {
 
 		// load the data into the numpy buffers
 		if(strcmp(cloader, "gadget2") == 0) {
-			if(!load_gadget2(&self->cmesh, cfile))
+			if(!load_gadget2(&self->cmesh, cfile)) {
+				PyErr_Format(PyExc_ValueError, "Could not read %s", cfile);
 				return -1;
+			}
 		} 
 		else if(strcmp(cloader, "gevolution") == 0) {
-			if(!load_gevolution(&self->cmesh, cfile))
+			if(!load_gevolution(&self->cmesh, cfile)) {
+				PyErr_Format(PyExc_ValueError, "Could not read %s", cfile);
 				return -1;
+			}
 		} 
-
 	}
 	else {
 		PyErr_SetString(PyExc_ValueError, "Invalid mesh loader.");
@@ -656,8 +727,10 @@ static PyObject* RStarTree_query(RStarTree *self, PyObject *args, PyObject *kwds
 
 	// parse the query box, should be a tuple
 	if(!PyArg_ParseTuple(box, "(ddd)(ddd)", &qbox[0].x, &qbox[0].y, &qbox[0].z, 
-				&qbox[1].x, &qbox[1].y, &qbox[1].z))
+				&qbox[1].x, &qbox[1].y, &qbox[1].z)) {
+		PyErr_SetString(PyExc_TypeError, "Query box must be a tuple containing two tuples of 3 values each");
 		return NULL;
+	}
 
 	// set up space to return all of the queried elements
 	psi_int capacity = 1024; 
@@ -700,8 +773,6 @@ static int RStarTree_init(RStarTree *self, PyObject *args, PyObject *kwds) {
 	// parse arguments differently depending on what the grid type is
 	// certain grid types must correspond to certain arg patterns
 	init_cap = 1024;
-
-	// TODO: type-check mesh
 	if(!PyArg_ParseTupleAndKeywords(args, kwds, "O!|i", kwlist, &MeshType, &mesh, &init_cap))
 			return -1;
 
@@ -880,9 +951,9 @@ static PyObject *PSI_VDF(PyObject *self, PyObject *args, PyObject* kwds) {
 	// force numpy to own the memory
 	npdims[0] = nsamp;
 	npdims[1] = 3;
-	PyObject* pyrho = PyArray_SimpleNewFromData(1, npdims, NPY_DOUBLE, rhoout);
+	PyObject* pyrho = PyArray_SimpleNewFromData(1, npdims, NPY_FLOAT64, rhoout);
 	if(!pyrho) return NULL;
-	PyObject* pyvel = PyArray_SimpleNewFromData(2, npdims, NPY_DOUBLE, velout);
+	PyObject* pyvel = PyArray_SimpleNewFromData(2, npdims, NPY_FLOAT64, velout);
 	if(!pyvel) return NULL;
 	PyArray_ENABLEFLAGS((PyArrayObject*)pyrho, NPY_ARRAY_OWNDATA);
 	PyArray_ENABLEFLAGS((PyArrayObject*)pyvel, NPY_ARRAY_OWNDATA);
@@ -1006,7 +1077,7 @@ static PyObject *PSI_phi(PyObject *self, PyObject *args, PyObject* kwds) {
 		npdims[ax] = cgrid.n.ijk[ax];
 
 	// the return array
-	PyObject* retar = PyArray_ZEROS(cgrid.dim, npdims, NPY_DOUBLE, 0);
+	PyObject* retar = PyArray_ZEROS(cgrid.dim, npdims, NPY_FLOAT64, 0);
 	psi_do_phi(&cgrid, PyArray_DATA(retar), Gn);
 	return retar;
 #else
@@ -1049,8 +1120,8 @@ static PyObject *PSI_powerSpectrum(PyObject *self, PyObject *args, PyObject* kwd
 
 	// the return array
 	npdims[0] = nbins;
-	PyObject* pspec = PyArray_ZEROS(1, npdims, NPY_DOUBLE, 0);
-	PyObject* kk = PyArray_ZEROS(1, npdims, NPY_DOUBLE, 0);
+	PyObject* pspec = PyArray_ZEROS(1, npdims, NPY_FLOAT64, 0);
+	PyObject* kk = PyArray_ZEROS(1, npdims, NPY_FLOAT64, 0);
 	psi_do_power_spectrum(&cgrid, PyArray_DATA(pspec), PyArray_DATA(kk), TWO_PI/lmin, nbins);
 	return Py_BuildValue("OO", pspec, kk);
 #else
@@ -1103,11 +1174,11 @@ static PyObject* Grid_getCellGeometry(Grid *self, PyObject *args, PyObject *kwds
 			// get direct pointers to the data
 			npdims[0] = slen;
 			npdims[1] = 3;
-			cverts = PyArray_SimpleNew(2, npdims, NPY_DOUBLE);
+			cverts = PyArray_SimpleNew(2, npdims, NPY_FLOAT64);
 			npdims[1] = 4;
 			npdims[2] = 3;
-			bverts = PyArray_SimpleNew(3, npdims, NPY_DOUBLE);
-			pyvol = PyArray_SimpleNew(1, npdims, NPY_DOUBLE);
+			bverts = PyArray_SimpleNew(3, npdims, NPY_FLOAT64);
+			pyvol = PyArray_SimpleNew(1, npdims, NPY_FLOAT64);
 			break;
 
 		case PSI_GRID_HPRING:
@@ -1134,11 +1205,11 @@ static PyObject* Grid_getCellGeometry(Grid *self, PyObject *args, PyObject *kwds
 			// or all cells if cells=None
 			npdims[0] = slen;
 			npdims[1] = 3;
-			cverts = PyArray_SimpleNew(2, npdims, NPY_DOUBLE);
+			cverts = PyArray_SimpleNew(2, npdims, NPY_FLOAT64);
 			npdims[1] = 4*bstep;
 			npdims[2] = 3;
-			bverts = PyArray_SimpleNew(3, npdims, NPY_DOUBLE);
-			pyvol = PyArray_SimpleNew(1, npdims, NPY_DOUBLE);
+			bverts = PyArray_SimpleNew(3, npdims, NPY_FLOAT64);
+			pyvol = PyArray_SimpleNew(1, npdims, NPY_FLOAT64);
 	
 			cvdata = PyArray_DATA((PyArrayObject*)cverts);
 			bvdata = PyArray_DATA((PyArrayObject*)bverts);
@@ -1208,7 +1279,7 @@ static PyObject *PSI_crossStreams(PyObject *self, PyObject *args, PyObject* kwds
     // compute the total density and bulk velocity
     rhotot = 0.0;
     npdims[0] = 3;
-    PyObject* pyvel = PyArray_SimpleNew(1, npdims, NPY_DOUBLE);
+    PyObject* pyvel = PyArray_SimpleNew(1, npdims, NPY_FLOAT64);
     psi_real* vtot = (psi_real*) PyArray_DATA(pyvel); 
     for(ax = 0; ax < 3; ++ax)
         vtot[ax] = 0.0;
@@ -1223,7 +1294,7 @@ static PyObject *PSI_crossStreams(PyObject *self, PyObject *args, PyObject* kwds
     // velocity dispersion matrix
     npdims[0] = 3;
     npdims[1] = 3;
-    PyObject* pycov = PyArray_SimpleNew(2, npdims, NPY_DOUBLE);
+    PyObject* pycov = PyArray_SimpleNew(2, npdims, NPY_FLOAT64);
 	psi_real* cov = (psi_real*) PyArray_DATA(pycov); 
     memset(cov, 0, 9*sizeof(psi_real));
     for(i = 0; i < nstreams; ++i) {
@@ -1395,7 +1466,7 @@ static int Metric_init(Metric *self, PyObject *args, PyObject *kwds) {
 	// make the fields dict
 	// now allocate numpy storage
 	self->fields = PyDict_New();
-	PyDict_SetItemString(self->fields, "m", PyArray_ZEROS(dim, npdims, NPY_DOUBLE, 0));
+	PyDict_SetItemString(self->fields, "m", PyArray_ZEROS(dim, npdims, NPY_FLOAT64, 0));
 
 #endif
     return 0;
@@ -1526,7 +1597,7 @@ static PyObject *PSI_beamtrace(PyObject *self, PyObject *args, PyObject* kwds) {
 	gdim.i = npdims[0];
 	gdim.j = npdims[1];
 	gdim.k = npdims[2];
-	PyObject* rayinfo = PyArray_SimpleNew(3, npdims, NPY_DOUBLE);
+	PyObject* rayinfo = PyArray_SimpleNew(3, npdims, NPY_FLOAT64);
 	psi_real* infar = PyArray_DATA((PyArrayObject*)rayinfo);
 
 	psi_beamtrace(&cgrid, &cmesh, bstep, &cmetric, infar, gdim);
