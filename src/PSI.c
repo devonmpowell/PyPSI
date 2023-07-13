@@ -345,17 +345,17 @@ typedef struct {
 static int Mesh_init(Mesh *self, PyObject *args, PyObject *kwds) {
 
 	psi_int ax, ndim, i;
-	psi_dvec nside;
+	psi_dvec nside, nelem;
 	char* cloader, *cfile;
 	npy_intp npdims[6];
 	npy_intp *dtmp; 
 	PyObject *seq, *tmp, *arr;
-	PyObject *posar = NULL, *velar = NULL, *massar = NULL, *box = NULL, *n = NULL, *connar = NULL;
-	static char *kwlist[] = {"loader", "filename", "pos", "vel", "mass", "connectivity", "periodic_box", "n", NULL};
+	PyObject *posar = NULL, *velar = NULL, *massar = NULL, *box = NULL, *connar = NULL;
+	static char *kwlist[] = {"loader", "filename", "pos", "vel", "mass", "connectivity", "periodic_box", NULL};
 
 	// parse arguments differently depending on what the grid type is
 	// certain grid types must correspond to certain arg patterns
-	if(!PyArg_ParseTupleAndKeywords(args, kwds, "s|sOOOOOO", kwlist, &cloader, &cfile, &posar, &velar, &massar, &connar, &box, &n))
+	if(!PyArg_ParseTupleAndKeywords(args, kwds, "s|sOOOOO", kwlist, &cloader, &cfile, &posar, &velar, &massar, &connar, &box))
 			return -1;
 
 	// check if we have a periodic wrap box
@@ -499,59 +499,138 @@ static int Mesh_init(Mesh *self, PyObject *args, PyObject *kwds) {
 	}
 	else if(strcmp(cloader, "block") == 0) {
 
-		// TODO: check dtype!!!!
+		if(PyArray_Check(posar)) {
 
-		if(!PyArray_Check(posar))
-			return -1;
-
-		ndim = PyArray_NDIM((PyArrayObject*)posar);
-		dtmp = PyArray_DIMS((PyArrayObject*)posar);
-
-		psi_printf("Pos array dimensions are %ld %ld %ld %ld, ndim = %ld\n", dtmp[0], dtmp[1], dtmp[2], dtmp[3], ndim);
-
-
-		if(!PySequence_Check(n)) {
-			psi_printf("Must provide particle block dimensions!\n");
+			// get the dimensionality based on shape of pos 
+			if(PyArray_TYPE(posar) != NPY_FLOAT64) {
+				PyErr_SetString(PyExc_TypeError, "pos must be an array of doubles");
+				return -1;
+			}
+			ndim = PyArray_NDIM((PyArrayObject*)posar);
+			dtmp = PyArray_DIMS((PyArrayObject*)posar);
+			if(ndim != 4 || dtmp[3] != 3) {
+				PyErr_SetString(PyExc_TypeError, "pos must be a 4D array with shape (nx, ny, nz, 3)");
+				return -1;
+			}
+			self->cmesh.dim = dtmp[3];
+			self->cmesh.npart = dtmp[0]*dtmp[1]*dtmp[2];
+			nside.i = dtmp[0];
+			nside.j = dtmp[1];
+			nside.k = dtmp[2];
+			tmp = self->pos;
+			self->pos = posar;
+			Py_INCREF(posar);
+			Py_DECREF(tmp);
+			self->cmesh.pos = (psi_rvec*)PyArray_DATA((PyArrayObject*)self->pos);
+		}
+		else {
+			PyErr_SetString(PyExc_TypeError, "pos must be a numpy array");
 			return -1;
 		}
-		for(ax = 0; ax < 3; ++ax)
-			nside.ijk[ax] = PyLong_AsLong(PySequence_GetItem(n, ax));
 
-		psi_printf("Loaded nside = %d %d %d\n", nside.i, nside.j, nside.k);
+		// set number of elements depending whether we wrap periodically
+		if(self->cmesh.periodic) {
+			for(ax = 0; ax < 3; ++ax)
+				nelem.ijk[ax] = nside.ijk[ax];
+		}
+		else {
+			for(ax = 0; ax < 3; ++ax)
+				nelem.ijk[ax] = nside.ijk[ax] - 1;
+		}
 
+		// trilinear elements naturally
+		self->cmesh.nelem = nelem.i*nelem.j*nelem.k;
+		self->cmesh.elemtype = PSI_MESH_LINEAR;
 
-
-		self->pos = posar;
-		Py_INCREF(posar);
-
-		// TODO: set better error handling here
-		self->vel = PyArray_SimpleNew(ndim, dtmp, NPY_FLOAT64);
-		self->mass = PyArray_SimpleNew(ndim-1, dtmp, NPY_FLOAT64);
-
-		npdims[0] = nside.i*nside.j*nside.k;
-		if(npdims[0] != dtmp[0]) {
-			psi_printf("Number of particles does not match block dimensions!\n");
+		// mass and velocity are not required, they will created if not provided 
+		if(velar == NULL) {
+			npdims[0] = nside.i;
+			npdims[1] = nside.j;
+			npdims[2] = nside.k;
+			npdims[3] = self->cmesh.dim;
+			self->vel = PyArray_SimpleNew(4, npdims, NPY_FLOAT64);
+			if(!self->vel) return -1;
+			self->cmesh.vel = (psi_real*)PyArray_DATA((PyArrayObject*)self->vel);
+			for(i = 0; i < self->cmesh.npart; ++i) {
+				self->cmesh.vel[i].x = 0.0;
+				self->cmesh.vel[i].y = 0.0;
+				self->cmesh.vel[i].z = 0.0;
+			}
+		}
+		else if(PyArray_Check(velar)) {
+			if(PyArray_TYPE(velar) != NPY_FLOAT64) {
+				PyErr_SetString(PyExc_TypeError, "if provided, vel must be an array of doubles");
+				return -1;
+			}
+			ndim = PyArray_NDIM((PyArrayObject*)velar);
+			dtmp = PyArray_DIMS((PyArrayObject*)velar);
+			if(ndim != 4 || dtmp[3] != self->cmesh.dim || 
+					dtmp[0] != nside.i || dtmp[1] != nside.j || dtmp[2] != nside.k) {
+				PyErr_SetString(PyExc_TypeError, "if provided, vel must have the same shape as pos");
+				return -1;
+			}
+			tmp = self->vel;
+			self->vel = velar;
+			Py_INCREF(velar);
+			Py_DECREF(tmp);
+			self->cmesh.vel = (psi_rvec*)PyArray_DATA((PyArrayObject*)self->vel);
+		}
+		else {
+			PyErr_SetString(PyExc_TypeError, "if provided, vel must be a numpy array");
 			return -1;
 		}
-		npdims[1] = PSI_MESH_LINEAR; 
-		self->connectivity = PyArray_SimpleNew(2, npdims, NPY_INT32);
-		psi_int* cptr = (psi_int*) PyArray_DATA((PyArrayObject*)self->connectivity); 
+
+		if(massar == NULL) {
+			npdims[0] = nelem.i;
+			npdims[1] = nelem.j;
+			npdims[2] = nelem.k;
+			self->mass = PyArray_SimpleNew(3, npdims, NPY_FLOAT64);
+			if(!self->mass) return -1;
+			self->cmesh.mass = (psi_real*)PyArray_DATA((PyArrayObject*)self->mass);
+			for(i = 0; i < self->cmesh.nelem; ++i)
+				self->cmesh.mass[i] = 1.0;
+		}
+		else if(PyArray_Check(massar)) {
+			if(PyArray_TYPE(massar) != NPY_FLOAT64) {
+				PyErr_SetString(PyExc_TypeError, "if provided, mass must be an array of doubles");
+				return -1;
+			}
+			ndim = PyArray_NDIM((PyArrayObject*)massar);
+			dtmp = PyArray_DIMS((PyArrayObject*)massar);
+			if(ndim != 3 || dtmp[0] != nelem.i || dtmp[1] != nelem.j || dtmp[2] != nelem.k) {
+				PyErr_SetString(PyExc_TypeError, "if provided, mass must be a 3D array of shape (nelemx, nelemy, nelemz)");
+				return -1;
+			}
+			tmp = self->mass;
+			self->mass = massar;
+			Py_INCREF(massar);
+			Py_DECREF(tmp);
+			self->cmesh.mass = (psi_real*)PyArray_DATA((PyArrayObject*)self->mass);
+		}
+		else {
+			PyErr_SetString(PyExc_TypeError, "if provided, mass must be a numpy array");
+			return -1;
+		}
 
 		// now build the mesh connectivity
-		// trilinear elements naturally
+		npdims[0] = self->cmesh.nelem;
+		npdims[1] = self->cmesh.elemtype;
+		self->connectivity = PyArray_SimpleNew(2, npdims, NPY_INT32);
+		if(!self->connectivity) return -1;
+		self->cmesh.connectivity = (psi_int*) PyArray_DATA((PyArrayObject*)self->connectivity); 
 		psi_int i, j, k, ii, jj, kk, locind, vertind;
 		psi_int elemind;
-		for(i = 0; i < nside.i; ++i)
-		for(j = 0; j < nside.j; ++j)
-		for(k = 0; k < nside.k; ++k) {
-			elemind = nside.j*nside.k*i + nside.k*j + k;
+		for(i = 0; i < nelem.i; ++i)
+		for(j = 0; j < nelem.j; ++j)
+		for(k = 0; k < nelem.k; ++k) {
+			elemind = nelem.j*nelem.k*i + nelem.k*j + k;
 			for(ii = 0; ii < 2; ++ii)
 			for(jj = 0; jj < 2; ++jj)
 			for(kk = 0; kk < 2; ++kk) {
 				locind = 4*ii + 2*jj + kk;
 				vertind = nside.j*nside.k*((i+ii)%nside.i) 
 					+ nside.k*((j+jj)%nside.j) + ((k+kk)%nside.k);
-				cptr[8*elemind+locind] = vertind;
+				self->cmesh.connectivity[8*elemind+locind] = vertind;
 			}
 		}
 

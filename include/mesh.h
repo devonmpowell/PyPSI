@@ -16,7 +16,6 @@ typedef struct {
 	psi_int dim;
 	psi_rvec *pos, *vel;
 	psi_real *mass;
-	psi_real scalarmass;
 	psi_int npart;
 	psi_int nelem;
 	psi_int* connectivity;
