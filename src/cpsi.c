@@ -27,8 +27,7 @@ void psi_make_ghosts(psi_rvec* elems, psi_rvec* rboxes, psi_int* num, psi_int st
 // psi implementation 
 void psi_voxels(psi_grid* grid, psi_mesh* mesh, psi_rtree* rtree, psi_int mode, psi_real reftol, psi_int max_ref_lvl) {
 
-	//setbuf(stdout, NULL);
-	psi_int e, g, t, v, nghosts, tind, internal_rtree, e1, t1;
+	psi_int e, g, t, v, ax, nghosts, tind, internal_rtree, e1, t1;
 
 	// a local copy of the position in case it is modified due to periodicity
 	psi_int vpere = mesh->elemtype;
@@ -44,12 +43,16 @@ void psi_voxels(psi_grid* grid, psi_mesh* mesh, psi_rtree* rtree, psi_int mode, 
 	psi_rvec grbox[(1<<mesh->dim)*2];
 
 	// constant-size buffer for max refinement level
+	// reftol in in terms of pixels
 	psi_rtree myrtree;
 	psi_rtree_query qry;
 	psi_tet_buffer tetbuf, tetbuf1;
-	psi_tet_buffer_init(&tetbuf, reftol, max_ref_lvl);
+	psi_real dxmin = 1.0e30; 
+	for(ax = 0; ax < PSI_NDIM; ++ax)
+	   if(grid->d.xyz[ax] < dxmin) dxmin = grid->d.xyz[ax];
+	psi_tet_buffer_init(&tetbuf, reftol*dxmin, max_ref_lvl);
 	if(mode == PSI_MODE_ANNIHILATION)
-		psi_tet_buffer_init(&tetbuf1, reftol, max_ref_lvl);
+		psi_tet_buffer_init(&tetbuf1, reftol*dxmin, max_ref_lvl);
 
 	// check to see if we must build an rtree for this function
 	// if so, create one from the mesh
