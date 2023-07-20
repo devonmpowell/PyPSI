@@ -2,7 +2,6 @@
 #define _GRID_H_
 
 #include "psi.h"
-#include "geometry.h"
 
 #define PSI_GRID_CART 0
 #define PSI_GRID_HPRING 1
@@ -14,10 +13,6 @@
 #define PSI_GRID_XX 3
 #define PSI_GRID_XV 4
 #define PSI_GRID_VV 5
-
-// weight options
-//#define PSI_WEIGHT_MASS 0
-//#define PSI_WEIGHT_VOL 1
 
 // structure to hold voxelization info
 // remains the same regardless of dimensionality
@@ -32,6 +27,6 @@ typedef struct {
 
 
 // functions
-psi_int psi_grid_get_cell_geometry(psi_grid* grid, psi_dvec grind, psi_int bstep, psi_rvec* boundary, psi_rvec* centeri, psi_real* vol);
+//psi_int psi_grid_get_cell_geometry(psi_grid* grid, psi_dvec grind, psi_int bstep, psi_rvec* boundary, psi_rvec* centeri, psi_real* vol);
 
 #endif // _GRID_H_

@@ -1,4 +1,5 @@
 #include "grid.h"
+#include "geometry.h"
 
 // declarations internal to this file
 void neighbors(int order_, int pix, int* result);
