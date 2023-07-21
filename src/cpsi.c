@@ -1,22 +1,35 @@
 /*
  *
- *		psi.c
- *		
- *		See psi.h for usage and documentation.
- *		
- *		Devon Powell
- *		11 Feb 2016
+ * cpsi.c 
  *
- */		
+ * Copyright (c) 2013-2023 Devon M. Powell
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ * 
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ * 
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ *
+ */
 
 #include "psi.h"
-
 #include "rtree.h"
 #include "grid.h"
 #include "mesh.h"
 #include "refine.h"
 #include "geometry.h"
-//#include "particles.h"
 
 // internal top-level utilities
 void psi_aabb(psi_rvec* pos, psi_int nverts, psi_rvec* rbox);
@@ -245,6 +258,12 @@ void psi_sample_vdf(psi_rvec samppos, psi_mesh* mesh, psi_rtree* rtree,
 			}
 			(*rhoout)[*nsamp] = mass/vol; // vol is guaranteed positive from psi_barycentric
 			(*nsamp)++;
+
+#ifdef PYMODULE
+			if(PyErr_CheckSignals() < 0)
+				return;
+#endif
+
 			next_tet: continue;
 		}
 	}
