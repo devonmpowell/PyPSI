@@ -1,6 +1,6 @@
-### PSI: The Phase Space Intersector 
+# PSI
 
-A Python extension for volume-sampling cosmological density and velocity fields on Cartesian grids using the Phase Space Sheet discretization.
+`PSI` (the Phase Space Intersector) is a Python module for post-processing the outputs of cosmological simulations. `PSI` applies the Phase Space Sheet discretization (see [Abel et al. 2012](https://ui.adsabs.harvard.edu/abs/2012MNRAS.427...61A/abstract)) to a set of particles, then volume-samples the density and velocity fields (as well as higher-order moments) onto a Cartesian grid. Anyone can use `PSI` to produce smooth and continuous density and velocity maps from particle data!  The volume-sampling procedure is geometrically exact, and converves mass down to machine precision. 
 
 The low-level volume-sampling routines are based on the [r3d software](https://github.com/devonmpowell/r3d),
 described in 
@@ -18,7 +18,7 @@ described in
 
 - To use in Python, simply `import PSI as psi` or similar 
 
-- See `examples.ipynb` for a tutorial on using PSI! 
+- See `tutorial/Tutorial.ipynb` for a guide to using PSI! 
 
 ---
 
