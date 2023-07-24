@@ -8,6 +8,14 @@ described in
 [LA-UR-15-26964](https://github.com/devonmpowell/r3d/blob/master/la-ur-15-26964.pdf). 
 
 
+
+![Example halo density](images/density.png?raw=true "Example halo density")
+
+
+![Example halo velocity](images/velocity.png?raw=true "Example halo velocity")
+
+
+
 ---
 
 ## Usage:
