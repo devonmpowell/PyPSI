@@ -34,6 +34,12 @@
 #include "mesh.h"
 #include "rtree.h"
 
+// forward declarations for functions in cpsi.c
+
+void psi_voxels(psi_grid* grid, psi_mesh* mesh, psi_rtree* rtree, psi_int mode, psi_real reftol, psi_int max_ref_lvl);
+void psi_sample_vdf(psi_rvec samppos, psi_mesh* mesh, psi_rtree* rtree, 
+		psi_real** rhoout, psi_rvec** velout, psi_int* nsamp , psi_real reftol, psi_int max_ref_lvl);
+
 /////////////////////////////////////////////////////////////
 //     Grid
 /////////////////////////////////////////////////////////////
@@ -51,7 +57,7 @@ typedef struct {
 
 static int Grid_init(Grid *self, PyObject *args, PyObject *kwds) {
 
-	psi_int ax, dim, i, len, order, nside, npix;
+	psi_int ax, dim, i, len;
 	const char *ctype, *cstring;
 	npy_intp npdims[6];
 	PyObject *seq, *tmp, *arr;
@@ -365,8 +371,7 @@ static int Mesh_init(Mesh *self, PyObject *args, PyObject *kwds) {
 	char* cloader, *cfile;
 	npy_intp npdims[6];
 	npy_intp *dtmp; 
-	PyObject *seq, *tmp, *arr;
-	PyObject *posar = NULL, *velar = NULL, *massar = NULL, *box = NULL, *connar = NULL;
+	PyObject *tmp = NULL, *posar = NULL, *velar = NULL, *massar = NULL, *box = NULL, *connar = NULL;
 	static char *kwlist[] = {"loader", "filename", "pos", "vel", "mass", "connectivity", "periodic_box", NULL};
 
 	// parse arguments differently depending on what the grid type is
@@ -396,7 +401,7 @@ static int Mesh_init(Mesh *self, PyObject *args, PyObject *kwds) {
 		if(PyArray_Check(posar)) {
 
 			// get the dimensionality based on shape of pos 
-			if(PyArray_TYPE(posar) != NPY_FLOAT64) {
+			if(PyArray_TYPE((PyArrayObject*)posar) != NPY_FLOAT64) {
 				PyErr_SetString(PyExc_TypeError, "pos must be an array of doubles");
 				return -1;
 			}
@@ -421,7 +426,7 @@ static int Mesh_init(Mesh *self, PyObject *args, PyObject *kwds) {
 		if(PyArray_Check(connar)) {
 
 			// elemtype based on shape of connectivity 
-			if(PyArray_TYPE(connar) != NPY_INT32) {
+			if(PyArray_TYPE((PyArrayObject*)connar) != NPY_INT32) {
 				PyErr_SetString(PyExc_TypeError, "connectivity must be an array of ints");
 				return -1;
 			}
@@ -454,7 +459,7 @@ static int Mesh_init(Mesh *self, PyObject *args, PyObject *kwds) {
 			npdims[1] = self->cmesh.dim;
 			self->vel = PyArray_SimpleNew(2, npdims, NPY_FLOAT64);
 			if(!self->vel) return -1;
-			self->cmesh.vel = (psi_real*)PyArray_DATA((PyArrayObject*)self->vel);
+			self->cmesh.vel = (psi_rvec*)PyArray_DATA((PyArrayObject*)self->vel);
 			for(i = 0; i < self->cmesh.npart; ++i) {
 				self->cmesh.vel[i].x = 0.0;
 				self->cmesh.vel[i].y = 0.0;
@@ -462,7 +467,7 @@ static int Mesh_init(Mesh *self, PyObject *args, PyObject *kwds) {
 			}
 		}
 		else if(PyArray_Check(velar)) {
-			if(PyArray_TYPE(velar) != NPY_FLOAT64) {
+			if(PyArray_TYPE((PyArrayObject*)velar) != NPY_FLOAT64) {
 				PyErr_SetString(PyExc_TypeError, "if provided, vel must be an array of doubles");
 				return -1;
 			}
@@ -492,7 +497,7 @@ static int Mesh_init(Mesh *self, PyObject *args, PyObject *kwds) {
 				self->cmesh.mass[i] = 1.0;
 		}
 		else if(PyArray_Check(massar)) {
-			if(PyArray_TYPE(massar) != NPY_FLOAT64) {
+			if(PyArray_TYPE((PyArrayObject*)massar) != NPY_FLOAT64) {
 				PyErr_SetString(PyExc_TypeError, "if provided, mass must be an array of doubles");
 				return -1;
 			}
@@ -518,7 +523,7 @@ static int Mesh_init(Mesh *self, PyObject *args, PyObject *kwds) {
 		if(PyArray_Check(posar)) {
 
 			// get the dimensionality based on shape of pos 
-			if(PyArray_TYPE(posar) != NPY_FLOAT64) {
+			if(PyArray_TYPE((PyArrayObject*)posar) != NPY_FLOAT64) {
 				PyErr_SetString(PyExc_TypeError, "pos must be an array of doubles");
 				return -1;
 			}
@@ -566,7 +571,7 @@ static int Mesh_init(Mesh *self, PyObject *args, PyObject *kwds) {
 			npdims[3] = self->cmesh.dim;
 			self->vel = PyArray_SimpleNew(4, npdims, NPY_FLOAT64);
 			if(!self->vel) return -1;
-			self->cmesh.vel = (psi_real*)PyArray_DATA((PyArrayObject*)self->vel);
+			self->cmesh.vel = (psi_rvec*)PyArray_DATA((PyArrayObject*)self->vel);
 			for(i = 0; i < self->cmesh.npart; ++i) {
 				self->cmesh.vel[i].x = 0.0;
 				self->cmesh.vel[i].y = 0.0;
@@ -574,7 +579,7 @@ static int Mesh_init(Mesh *self, PyObject *args, PyObject *kwds) {
 			}
 		}
 		else if(PyArray_Check(velar)) {
-			if(PyArray_TYPE(velar) != NPY_FLOAT64) {
+			if(PyArray_TYPE((PyArrayObject*)velar) != NPY_FLOAT64) {
 				PyErr_SetString(PyExc_TypeError, "if provided, vel must be an array of doubles");
 				return -1;
 			}
@@ -607,7 +612,7 @@ static int Mesh_init(Mesh *self, PyObject *args, PyObject *kwds) {
 				self->cmesh.mass[i] = 1.0;
 		}
 		else if(PyArray_Check(massar)) {
-			if(PyArray_TYPE(massar) != NPY_FLOAT64) {
+			if(PyArray_TYPE((PyArrayObject*)massar) != NPY_FLOAT64) {
 				PyErr_SetString(PyExc_TypeError, "if provided, mass must be an array of doubles");
 				return -1;
 			}
@@ -681,10 +686,10 @@ static int Mesh_init(Mesh *self, PyObject *args, PyObject *kwds) {
 		npdims[1] = self->cmesh.elemtype; 
 		self->connectivity = PyArray_SimpleNew(2, npdims, NPY_INT32);
 		if(!self->connectivity) return -1;
-		self->cmesh.pos = PyArray_DATA((PyArrayObject*)self->pos);
-		self->cmesh.vel = PyArray_DATA((PyArrayObject*)self->vel);
-		self->cmesh.mass = PyArray_DATA((PyArrayObject*)self->mass);
-		self->cmesh.connectivity = PyArray_DATA((PyArrayObject*)self->connectivity);
+		self->cmesh.pos = (psi_rvec*)PyArray_DATA((PyArrayObject*)self->pos);
+		self->cmesh.vel = (psi_rvec*)PyArray_DATA((PyArrayObject*)self->vel);
+		self->cmesh.mass = (psi_real*)PyArray_DATA((PyArrayObject*)self->mass);
+		self->cmesh.connectivity = (psi_int*)PyArray_DATA((PyArrayObject*)self->connectivity);
 
 		// load the data into the numpy buffers
 		if(strcmp(cloader, "gadget2") == 0) {
@@ -859,9 +864,8 @@ static PyObject* RStarTree_query(RStarTree *self, PyObject *args, PyObject *kwds
 
 static int RStarTree_init(RStarTree *self, PyObject *args, PyObject *kwds) {
 
-	psi_int ax, dim, order, nside, npix, init_cap;
+	psi_int ax, init_cap;
     psi_rvec tbox[2];
-	npy_intp npdims[6];
 	Mesh* mesh = NULL;
 	static char *kwlist[] = {"mesh", "initial_capacity", NULL};
 
@@ -886,7 +890,7 @@ static int RStarTree_init(RStarTree *self, PyObject *args, PyObject *kwds) {
 	}
 
 	// TODO: pass inital capacity
-	psi_rtree_from_mesh(&self->ctree, &mesh->cmesh, &tbox);
+	psi_rtree_from_mesh(&self->ctree, &mesh->cmesh, &tbox[0]);
 
     return 0;
 }
@@ -974,7 +978,6 @@ static PyObject *PSI_voxels(PyObject *self, PyObject *args, PyObject* kwds) {
 	char* modestr;
 	Mesh* mesh;
 	Grid* grid;	
-	npy_intp nverts;
 	static char *kwlist[] = {"grid", "mesh", "mode", "refine_tolerance", "refine_max_lvl", NULL};
 
 	// defaults
@@ -1021,13 +1024,12 @@ static PyObject *PSI_VDF(PyObject *self, PyObject *args, PyObject* kwds) {
 	psi_int maxlvl, nsamp;
 	psi_real reftol;
 	psi_rvec samppos;
-	psi_rtree* ctree;
 	psi_real* rhoout;
 	psi_rvec* velout;
 	Mesh* mesh = NULL;
 	RStarTree* rst = NULL;
+	psi_rtree* ctree = NULL;
 	npy_intp npdims[3];
-	npy_intp nverts;
 	static char *kwlist[] = {"mesh", "sample_pos", "tree", "refine_tolerance", "refine_max_lvl", NULL};
 
 	reftol = 1.0;

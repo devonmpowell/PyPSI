@@ -26,6 +26,9 @@
 
 #include "rtree.h"
 
+// TODO: this declaration is repeated from cpsi.c
+psi_int psi_aabb_periodic(psi_rvec* pos, psi_rvec* rbox, psi_rvec* window, psi_mesh* mesh); 
+
 // private declarations, not exposed to the user
 void psi_rtree_rbox(psi_rtree_node* node, psi_rvec* rbox); 
 void psi_rtree_split(psi_rtree_node* newnodes[2], psi_rtree_data* entries); 

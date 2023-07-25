@@ -35,6 +35,8 @@ void ring2xyf(int order_, int pix, int* ix, int* iy, int* face_num);
 
 psi_int psi_grid_get_cell_geometry(psi_grid* grid, psi_dvec grind, psi_int step, psi_rvec* boundary, psi_rvec* center, psi_real* vol) {
 
+#if 0
+
 	psi_int ii, jj, ix, iy, i, j, k, m, face;
 	psi_int order_, nside_, npix_;
 	psi_real dx[2], x0[2], xc, yc, dc, d;
@@ -102,6 +104,7 @@ psi_int psi_grid_get_cell_geometry(psi_grid* grid, psi_dvec grind, psi_int step,
 	}
 
 
+#endif
 
 
 	return 1;

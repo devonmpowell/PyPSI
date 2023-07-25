@@ -34,7 +34,8 @@ typedef struct {
 
 int peek_gadget2(psi_mesh* mesh, const char* filename) {
 
-	int blksize, e, i;
+	unsigned int blksize;
+	int e, i;
 	gadget2header header;
 	FILE* f = fopen(filename, "r");
 	if(!f) {
@@ -60,7 +61,8 @@ int peek_gadget2(psi_mesh* mesh, const char* filename) {
 
 int load_gadget2(psi_mesh* mesh, const char* filename) {
 
-	int blksize, p, e, nside, ii, jj, kk, i, j, k;
+	unsigned int blksize;
+	int p, e, nside, ii, jj, kk, i, j, k;
 	int elemind, locind, vertind;
 	int load_mass;
 	gadget2header header;
@@ -210,8 +212,9 @@ void gevolution_lagrangian_cube_indices(int global_id, int tile_nside, int* cube
 
 int load_gevolution(psi_mesh* mesh, const char* filename) {
 
-	int blksize, p, e, nside, i, j, k;
-	int elemind, locind, vertind, tile_nside;
+	unsigned int blksize; 
+	int p, e, i, nside;
+	int tile_nside;
 	int load_mass;
 	gadget2header header;
 	psi_printf("Loading %s...\n", filename);

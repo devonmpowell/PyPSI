@@ -43,9 +43,9 @@ typedef struct {
 	psi_int nstack;
 	psi_int polyorder;
 	psi_grid* grid;
-} psi_voxels;
-void psi_voxels_init(psi_voxels* vox, psi_poly* poly, psi_int polyorder, psi_rvec* rbox, psi_grid* grid);
-psi_int psi_voxels_next(psi_voxels* vox, psi_real* moments, psi_int* gridind);
+} psi_voxel_stack;
+void psi_voxels_init(psi_voxel_stack* vox, psi_poly* poly, psi_int polyorder, psi_rvec* rbox, psi_grid* grid);
+psi_int psi_voxels_next(psi_voxel_stack* vox, psi_real* moments, psi_int* gridind);
 
 // internal declarations for very low-level voxelization routines
 void psi_clip(psi_poly* poly, psi_plane* planes, psi_int nplanes);
@@ -53,6 +53,7 @@ void psi_split_coord(psi_poly* inpoly, psi_poly* outpolys, psi_real coord, psi_i
 void psi_reduce(psi_poly* poly, psi_real* moments, psi_int polyorder, psi_int weight);
 void psi_init_tet(psi_poly* poly, psi_rvec* verts);
 psi_real psi_orient_tet(psi_rvec* pos, psi_rvec* vel);
+void psi_tet_faces_from_verts(psi_plane* faces, psi_rvec* verts);
 
 
 // the top-level voxelization routine
@@ -97,7 +98,7 @@ void psi_voxelize_tet(psi_rvec* pos, psi_rvec* vel, psi_real mass, psi_rvec* rbo
 	}
 
 	// initialize the voxelization iterator
-	psi_voxels vox;
+	psi_voxel_stack vox;
 	psi_voxels_init(&vox, &curpoly, polyorder, rbox, grid);
 	while(psi_voxels_next(&vox, moments, &gridind)) {
 	
@@ -225,11 +226,11 @@ psi_real psi_orient_tet(psi_rvec* pos, psi_rvec* vel) {
 void psi_voxelize_annihilation(psi_rvec* pos0, psi_rvec* vel0, psi_real mass0, 
 		psi_rvec* pos1, psi_rvec* vel1, psi_real mass1, psi_rvec* mbox, psi_grid* grid) {
 
-	psi_int i, gridind;
+	psi_int gridind;
 	psi_real moments[10];
 	psi_poly curpoly;
 	psi_plane faces[PSI_NDIM+1];
-	psi_voxels vox;
+	psi_voxel_stack vox;
 
 	// get the volume and correctly orient the tets
 	// TODO: volume for degenerate tets?
@@ -802,7 +803,7 @@ void psi_init_tet(psi_poly* poly, psi_rvec* pos) {
 	for(v = 0; v < PSI_NDIM+1; ++v) poly->verts[v].pos = pos[v];
 }
 
-void psi_voxels_init(psi_voxels* vox, psi_poly* poly, psi_int polyorder, psi_rvec* rbox, psi_grid* grid) {
+void psi_voxels_init(psi_voxel_stack* vox, psi_poly* poly, psi_int polyorder, psi_rvec* rbox, psi_grid* grid) {
 
 	psi_int i, cliplo, cliphi, nplanes;
 	psi_real cmin, cmax;
@@ -848,7 +849,7 @@ void psi_voxels_init(psi_voxels* vox, psi_poly* poly, psi_int polyorder, psi_rve
 	vox->nstack = 1;
 }
 
-psi_int psi_voxels_next(psi_voxels* vox, psi_real* moments, psi_int* gridind) {
+psi_int psi_voxels_next(psi_voxel_stack* vox, psi_real* moments, psi_int* gridind) {
 
 	psi_int i, dmax, spax, siz;
 	psi_poly curpoly;

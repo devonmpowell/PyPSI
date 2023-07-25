@@ -94,5 +94,4 @@ typedef union {
 	psi_int ijk[3];
 } psi_dvec;
 
-
 #endif // _PSI_H_
